@@ -6,14 +6,13 @@ import (
 	"sync"
 )
 
-type Message []byte
 type SafeConnectionMap struct {
 	sync.RWMutex
 	connMap map[string]chan NetworkMessage
 }
 type NetworkMessage struct {
 	Remote  net.Addr
-	Message Message
+	Message []byte
 }
 
 var cmap = SafeConnectionMap{connMap: make(map[string]chan NetworkMessage)}
@@ -58,7 +57,7 @@ func SendMessage(toSend NetworkMessage, selfIp net.Addr) {
 	ch <- toSend
 }
 
-func Broadcast(toSend Message, selfIp net.Addr) {
+func Broadcast(toSend []byte, selfIp net.Addr) {
 	cmap.RLock()
 	defer cmap.RUnlock()
 	for _, ch := range cmap.connMap {
