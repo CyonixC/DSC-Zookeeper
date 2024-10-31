@@ -13,29 +13,29 @@ import (
 )
 
 var ipToConnection = SafeConnectionMap{
-	connMap: make(map[net.Addr]net.Conn),
+	connMap: make(map[string]net.Conn),
 }
 
 type NetworkMessage struct {
-	remote  net.Addr
+	remote  string
 	message []byte
 }
 
 type SafeConnectionMap struct {
 	sync.RWMutex
-	connMap map[net.Addr]net.Conn
+	connMap map[string]net.Conn
 }
 
 func (smap *SafeConnectionMap) store(key net.Addr, val net.Conn) {
 	smap.Lock()
 	defer smap.Unlock()
-	smap.connMap[key] = val
+	smap.connMap[key.String()] = val
 }
 
 func (smap *SafeConnectionMap) load(key net.Addr) (net.Conn, bool) {
 	smap.RLock()
 	defer smap.RUnlock()
-	val, ok := smap.connMap[key]
+	val, ok := smap.connMap[key.String()]
 	return val, ok
 }
 
@@ -87,7 +87,7 @@ func startReceiving(recv_channel chan NetworkMessage, connection net.Conn) {
 
 		ret := make([]byte, 1024)
 		copy(ret, buffer)
-		go func() { recv_channel <- NetworkMessage{connection.RemoteAddr(), ret} }()
+		go func() { recv_channel <- NetworkMessage{connection.RemoteAddr().String(), ret} }()
 	}
 }
 
@@ -221,7 +221,11 @@ func SendMessage(toSend NetworkMessage) error {
 	// Find the right connection and send the message.
 	// If the connection does not exist, attempt to establish it.
 	// This is a blocking call!
-	sendConnection, ok := ipToConnection.load(toSend.remote)
+	remote, err := net.ResolveIPAddr("ip", toSend.remote)
+	if err != nil {
+		return err
+	}
+	sendConnection, ok := ipToConnection.load(remote)
 	if ok {
 		_, err := sendConnection.Write(toSend.message)
 		if err != nil {
@@ -230,7 +234,7 @@ func SendMessage(toSend NetworkMessage) error {
 	} else {
 		// We don't have an existing connection with this machine.
 		tempChan := make(chan net.Conn)
-		go attemptConnection(toSend.remote, tempChan)
+		go attemptConnection(remote, tempChan)
 		newConnection := <-tempChan
 		if newConnection != nil {
 			ipToConnection.store(newConnection.RemoteAddr(), newConnection)
