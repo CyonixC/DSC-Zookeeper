@@ -1,4 +1,4 @@
-package ConnectionManager
+package connectionManager
 
 // Contains functions for sending and receiving TCP messages.
 
@@ -12,6 +12,10 @@ import (
 	"time"
 )
 
+var ipToConnection = SafeConnectionMap{
+	connMap: make(map[net.Addr]net.Conn),
+}
+
 type NetworkMessage struct {
 	remote  net.Addr
 	message []byte
@@ -24,14 +28,14 @@ type SafeConnectionMap struct {
 
 func (smap *SafeConnectionMap) store(key net.Addr, val net.Conn) {
 	smap.Lock()
+	defer smap.Unlock()
 	smap.connMap[key] = val
-	smap.Unlock()
 }
 
 func (smap *SafeConnectionMap) load(key net.Addr) (net.Conn, bool) {
 	smap.RLock()
+	defer smap.RUnlock()
 	val, ok := smap.connMap[key]
-	smap.RUnlock()
 	return val, ok
 }
 
@@ -189,16 +193,13 @@ func attemptConnection(socketAddress net.Addr, successChan chan net.Conn) {
 	successChan <- conn
 }
 
-func Init() (sendChannel chan NetworkMessage, receiveChannel chan NetworkMessage) {
+func Init() (receiveChannel chan NetworkMessage) {
 	// Initialise all the things needed to maintain and track connections between nodes. This includes:
 	// Set up a TCP listener on a specified port (portNum in env.go)
 	// Repeatedly ping the known machines in the network until connections are established with all
 
 	// New connections will arrive on this channel
 	newConnChan := make(chan net.Conn)
-
-	// This channel is used to send to external nodes
-	sendChannel = make(chan NetworkMessage)
 
 	// This channel is used to receive from external nodes
 	receiveChannel = make(chan NetworkMessage)
@@ -212,16 +213,50 @@ func Init() (sendChannel chan NetworkMessage, receiveChannel chan NetworkMessage
 		log.Fatal("Could not process node IP addresses; check the configuration file", err)
 	}
 	go connectToSystemServers(socketAddresses, newConnChan)
-	go connectionManager(sendChannel, receiveChannel, newConnChan)
+	go connectionManager(receiveChannel, newConnChan)
 	return
 }
 
-func connectionManager(sendChannel chan NetworkMessage, receiveChannel chan NetworkMessage, newConnectionChan chan net.Conn) {
+func SendMessage(toSend NetworkMessage) error {
+	// Find the right connection and send the message.
+	// If the connection does not exist, attempt to establish it.
+	// This is a blocking call!
+	sendConnection, ok := ipToConnection.load(toSend.remote)
+	if ok {
+		_, err := sendConnection.Write(toSend.message)
+		if err != nil {
+			return err
+		}
+	} else {
+		// We don't have an existing connection with this machine.
+		tempChan := make(chan net.Conn)
+		go attemptConnection(toSend.remote, tempChan)
+		newConnection := <-tempChan
+		if newConnection != nil {
+			ipToConnection.store(newConnection.RemoteAddr(), newConnection)
+			_, err := newConnection.Write(toSend.message)
+			if err != nil {
+				return err
+			}
+		} else {
+			// Failed to establish new connection
+			return errors.New("could not establish TCP connection to target")
+		}
+	}
+	return nil
+}
+
+func Broadcast(toSend []byte) {
+	ipToConnection.RLock()
+	defer ipToConnection.RUnlock()
+	for addr := range ipToConnection.connMap {
+		go SendMessage(NetworkMessage{addr, toSend})
+	}
+}
+
+func connectionManager(receiveChannel chan NetworkMessage, newConnectionChan chan net.Conn) {
 	// Contains a mapping between network addresses and connections, and primarily manages the sending of messages.
-	var ipToConnection SafeConnectionMap
-	ipToConnection.connMap = make(map[net.Addr]net.Conn)
-	select {
-	case newConnection := <-newConnectionChan:
+	for newConnection := range newConnectionChan {
 		// A new connection has come in. If we already have a connection to this node, close it.
 		_, ok := ipToConnection.load(newConnection.RemoteAddr())
 		if ok {
@@ -231,23 +266,6 @@ func connectionManager(sendChannel chan NetworkMessage, receiveChannel chan Netw
 			// Store the new connection and start receiving
 			go startReceiving(receiveChannel, newConnection)
 			ipToConnection.store(newConnection.RemoteAddr(), newConnection)
-		}
-	case toSend := <-sendChannel:
-		// Our client wants to send a new message. Find the right connection and send it.
-		sendConnection, ok := ipToConnection.load(toSend.remote)
-		if ok {
-			sendConnection.Write(toSend.message)
-		} else {
-			// We don't have an existing connection with this machine.
-			go func() {
-				tempChan := make(chan net.Conn)
-				go attemptConnection(toSend.remote, tempChan)
-				newConnection := <-tempChan
-				if newConnection != nil {
-					ipToConnection.store(newConnection.RemoteAddr(), newConnection)
-					newConnection.Write(toSend.message)
-				}
-			}()
 		}
 	}
 }

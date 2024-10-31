@@ -1,4 +1,4 @@
-package ConnectionManager
+package connectionManager
 
 const portNum int = 8790
 const tcpRetryConnectionTimeoutSeconds int = 2
