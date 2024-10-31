@@ -17,8 +17,8 @@ var ipToConnection = SafeConnectionMap{
 }
 
 type NetworkMessage struct {
-	remote  string
-	message []byte
+	Remote  string
+	Message []byte
 }
 
 type SafeConnectionMap struct {
@@ -221,13 +221,13 @@ func SendMessage(toSend NetworkMessage) error {
 	// Find the right connection and send the message.
 	// If the connection does not exist, attempt to establish it.
 	// This is a blocking call!
-	remote, err := net.ResolveIPAddr("ip", toSend.remote)
+	remote, err := net.ResolveIPAddr("ip", toSend.Remote)
 	if err != nil {
 		return err
 	}
 	sendConnection, ok := ipToConnection.load(remote)
 	if ok {
-		_, err := sendConnection.Write(toSend.message)
+		_, err := sendConnection.Write(toSend.Message)
 		if err != nil {
 			return err
 		}
@@ -238,7 +238,7 @@ func SendMessage(toSend NetworkMessage) error {
 		newConnection := <-tempChan
 		if newConnection != nil {
 			ipToConnection.store(newConnection.RemoteAddr(), newConnection)
-			_, err := newConnection.Write(toSend.message)
+			_, err := newConnection.Write(toSend.Message)
 			if err != nil {
 				return err
 			}

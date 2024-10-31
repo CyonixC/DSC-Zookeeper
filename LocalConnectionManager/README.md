@@ -41,8 +41,8 @@ connectionManager.Broadcast(msg, localIP)
 The format of the send and received messages is the `NetworkMessage` struct:
 ```go
 type NetworkMessage struct {
-	remote  string
-	message []byte
+	Remote  string
+	Message []byte
 }
 ```
 
