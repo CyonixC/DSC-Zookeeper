@@ -126,7 +126,7 @@ func receiveProposal(prop Proposal, source int) {
 	}
 	switch prop.PropType {
 	case StateChange:
-		proposalsQueue.Enqueue(prop)
+		proposalsQueue.enqueue(prop)
 	case Commit:
 		receiveCommitProp()
 	case NewLeader:
@@ -137,7 +137,7 @@ func receiveProposal(prop Proposal, source int) {
 }
 
 func receiveCommitProp() {
-	prop, ok := proposalsQueue.Dequeue()
+	prop, ok := proposalsQueue.dequeue()
 	if !ok {
 		log.Fatal("Received COMMIT with no proposals in queue")
 	}

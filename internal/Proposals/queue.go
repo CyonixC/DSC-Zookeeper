@@ -8,15 +8,15 @@ type SafeQueue[T any] struct {
 	items []T
 }
 
-// Enqueue adds an element to the end of the queue
-func (q *SafeQueue[T]) Enqueue(item T) {
+// enqueue adds an element to the end of the queue
+func (q *SafeQueue[T]) enqueue(item T) {
 	q.Lock()
 	defer q.Unlock()
 	q.items = append(q.items, item)
 }
 
-// Dequeue removes an element from the front of the queue
-func (q *SafeQueue[T]) Dequeue() (T, bool) {
+// dequeue removes an element from the front of the queue
+func (q *SafeQueue[T]) dequeue() (T, bool) {
 	q.Lock()
 	defer q.Unlock()
 	var zeroVal T
@@ -28,15 +28,15 @@ func (q *SafeQueue[T]) Dequeue() (T, bool) {
 	return item, true
 }
 
-// IsEmpty checks if the queue is empty
-func (q *SafeQueue[T]) IsEmpty() bool {
+// isEmpty checks if the queue is empty
+func (q *SafeQueue[T]) isEmpty() bool {
 	q.RLock()
 	defer q.RUnlock()
 	return len(q.items) == 0
 }
 
-// Peek returns the front element without removing it
-func (q *SafeQueue[T]) Peek() (T, bool) {
+// peek returns the front element without removing it
+func (q *SafeQueue[T]) peek() (T, bool) {
 	q.RLock()
 	defer q.RUnlock()
 	var zeroVal T
@@ -46,8 +46,8 @@ func (q *SafeQueue[T]) Peek() (T, bool) {
 	return q.items[0], true
 }
 
-// Size returns the number of elements in the queue
-func (q *SafeQueue[T]) Size() int {
+// size returns the number of elements in the queue
+func (q *SafeQueue[T]) size() int {
 	q.RLock()
 	defer q.RUnlock()
 	return len(q.items)
