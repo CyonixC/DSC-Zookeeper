@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 )
 
 type SafeConnectionMap struct {
@@ -51,10 +52,22 @@ func Init(address net.Addr) (receive_channel chan NetworkMessage) {
 	return
 }
 
-func SendMessage(toSend NetworkMessage, selfIp net.Addr) {
+func SendMessage(toSend NetworkMessage, selfIp net.Addr, success chan bool) {
 	ch, _ := cmap.load(toSend.Remote)
 	toSend.Remote = selfIp
-	ch <- toSend
+	defer func() {
+		// Fail on closed channel
+		if r := recover(); r != nil {
+			success <- false
+		}
+	}()
+	timer := time.NewTimer(time.Duration(sendMessageTimeoutSeconds) * time.Second)
+	select {
+	case ch <- toSend:
+		success <- true
+	case <-timer.C:
+		success <- false
+	}
 }
 
 func Broadcast(toSend []byte, selfIp net.Addr) {
