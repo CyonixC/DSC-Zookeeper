@@ -8,7 +8,7 @@ Import this file in your code:
 ```go
 import (
     // other packages...
-    "zookeeper/LocalConnectionManager"
+    "local/zookeeper/internal/LocalConnectionManager"
 )
 ```
 

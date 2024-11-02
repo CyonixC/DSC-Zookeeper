@@ -6,7 +6,7 @@ Import this file in your code:
 ```go
 import (
     // other packages...
-    "zookeeper/ConnectionManager"
+    "local/zookeeper/internal/ConnectionManager"
 )
 ```
 
