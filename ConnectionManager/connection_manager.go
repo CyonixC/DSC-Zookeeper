@@ -29,6 +29,8 @@ type SafeConnectionMap struct {
 func (smap *SafeConnectionMap) store(key net.Addr, val net.Conn) {
 	smap.Lock()
 	defer smap.Unlock()
+	val.SetReadDeadline(time.Time{})
+	val.SetWriteDeadline(time.Now().Add(time.Duration(tcpWriteTimeoutSeconds) * time.Second))
 	smap.connMap[key.String()] = val
 }
 
