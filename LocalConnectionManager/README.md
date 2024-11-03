@@ -8,12 +8,11 @@ Import this file in your code:
 ```go
 import (
     // other packages...
-    "zookeeper/LocalConnectionManager"
+    "local/zookeeper/internal/LocalConnectionManager"
 )
 ```
 
 To initialise, call the `Init()` function. This returns a single channel, the receive channel. Newly received messages will come in on this channel.
-Unlike the actual connection manager, this takes the current nodes (fake) IP address.
 
 ```go
 localIP = "192.168.10.1"
@@ -21,21 +20,23 @@ recv := connectionManager.Init(localIP)
 ```
 
 To send a message, call the `SendMessage()` function:
-Similar to `Init()`, this also takes an extra argument.
 ```go
 var msg []byte
+var failed chan string
 localIP = "192.168.10.1"
 remoteAddr := "192.168.0.2"
-err := connectionManager.SendMessage(NetworkMessage{remoteAddr, msg}, localIP)
+err := connectionManager.SendMessage(NetworkMessage{remoteAddr, msg}, localIP, failed)
 ```
 
 To broadcast a message, call the `Broadcast()` function:
-Similar to the other functions, this also takes an extra argument.
 ```go
 var msg []byte
+var failed chan string
 localIP = "192.168.10.1"
-connectionManager.Broadcast(msg, localIP)
+connectionManager.Broadcast(msg, localIP, failed)
 ```
+
+Both `SendMessage` and `Broadcast` take a "failed" channel argument which outputs IP addresses machines which messages failed to send to.
 
 ## Message format
 The format of the send and received messages is the `NetworkMessage` struct:
