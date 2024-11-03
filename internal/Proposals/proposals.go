@@ -179,10 +179,19 @@ func broadcastZabMessage(msg ZabMessage, selfIP net.Addr, failedSends chan strin
 	cxn.Broadcast(serial, selfIP, failedSends)
 }
 
+// Sends a new write request to a given machine.
+func SendWriteRequest(content []byte, failedSends chan string, selfIP net.Addr) {
+	req := Request{
+		ReqType: Write,
+		Content: content,
+	}
+	sendRequest(req, failedSends, selfIP)
+}
+
 // Send a Request to a machine.
 // If a machine attempts to send a request to its own IP address, the request is immediately
 // processed instead of being sent through the network.
-func SendRequest(req Request, failedSends chan string, selfIP net.Addr) {
+func sendRequest(req Request, failedSends chan string, selfIP net.Addr) {
 	if currentCoordinator == selfIP {
 		processRequest(req, failedSends, selfIP)
 		return
