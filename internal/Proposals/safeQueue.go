@@ -1,5 +1,8 @@
 package proposals
 
+// This file contains related definitions for the SafeQueue structure, a thread-safe queue used to
+// handle the queueing of recorded proposals.
+
 import "sync"
 
 // SafeQueue structure
