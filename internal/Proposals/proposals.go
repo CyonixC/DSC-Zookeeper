@@ -5,7 +5,10 @@ package proposals
 import (
 	"encoding/json"
 	"fmt"
+	cxn "local/zookeeper/internal/LocalConnectionManager"
 	"log"
+	"net"
+	"reflect"
 	"sync"
 )
 
@@ -26,11 +29,19 @@ const (
 	Write
 )
 
+type Deserialisable interface {
+	ZabMessage | Proposal | Request
+}
+
 // TODO replace this with a system-wide variable in the actual implementation
-const currentCoordinator = 0
+var currentCoordinator net.Addr = &net.IPAddr{
+	IP: net.ParseIP("192.168.10.1"),
+}
+
+const n_systems = 5
 
 var zxidCounter ZXIDCounter
-var ackCounter AckCounter
+var ackCounter AckCounter = AckCounter{ackTracker: make(map[uint32]int)}
 var proposalsQueue SafeQueue[Proposal]
 var lockedVar = struct {
 	sync.RWMutex
@@ -113,17 +124,34 @@ func (ackCnt *AckCounter) remove(zxid uint32) {
 	delete(ackCnt.ackTracker, zxid)
 }
 
+func (ackCnt *AckCounter) incrementOrRemove(zxid uint32, maxCount int) bool {
+	ackCnt.Lock()
+	defer ackCnt.Unlock()
+	count, ok := ackCnt.ackTracker[zxid]
+	if !ok {
+		return false
+	}
+	if count+1 > maxCount {
+		ackCnt.ackTracker[zxid] = 0
+		return true
+	}
+
+	ackCnt.ackTracker[zxid] = count + 1
+	return false
+}
+
 func (ackCnt *AckCounter) storeNew(zxid uint32) {
 	ackCnt.Lock()
 	defer ackCnt.Unlock()
 	ackCnt.ackTracker[zxid] = 1
 }
 
-func receiveProposal(prop Proposal, source int) {
-	if currentCoordinator != source {
+func receiveProposal(prop Proposal, source net.Addr) {
+	if currentCoordinator.String() != source.String() {
 		// Proposal is not from the current coordinator; ignore it.
 		return
 	}
+	// log.Println("Received proposal from", source, "of type", prop.PropType)
 	switch prop.PropType {
 	case StateChange:
 		proposalsQueue.enqueue(prop)
@@ -138,10 +166,39 @@ func receiveProposal(prop Proposal, source int) {
 
 func receiveCommitProp() {
 	prop, ok := proposalsQueue.dequeue()
+	// log.Println("Received commit, popping proposal", prop)
 	if !ok {
 		log.Fatal("Received COMMIT with no proposals in queue")
 	}
 	processPropUpdate(int(prop.Content[0]))
+}
+
+func receiveACK(prop Proposal, failedSends chan string, selfIP net.Addr) {
+	zxid := getZXIDAsInt(prop.EpochNum, prop.CountNum)
+	log.Println(selfIP, "receives ACK for", zxid)
+	if ackCounter.incrementOrRemove(zxid, n_systems/2) {
+		broadcastCommit(failedSends, selfIP)
+	}
+}
+
+func broadcastCommit(failedSends chan string, selfIP net.Addr) {
+	// leave everything empty except commit for now (assume TCP helps us with ordering)
+	prop := Proposal{
+		Commit,
+		0,
+		0,
+		nil,
+	}
+	propJson, err := json.Marshal(prop)
+	if err != nil {
+		log.Fatal("Error on JSON conversion", err)
+	}
+	zab := ZabMessage{
+		Prop,
+		propJson,
+	}
+	broadcastZabMessage(zab, selfIP, failedSends)
+	// log.Println("Broadcasting commit message: ", zab)
 }
 
 func processPropUpdate(update int) {
@@ -151,19 +208,21 @@ func processPropUpdate(update int) {
 	lockedVar.Unlock()
 }
 
-func receiveRequest(req Request) {
+func receiveRequest(req Request, failedSends chan string, selfIP net.Addr) {
+	// log.Println(selfIP, "received request")
 	switch req.ReqType {
 	case Write:
 		epoch, count := zxidCounter.incCount()
 		zxid := getZXIDAsInt(epoch, count)
 		ackCounter.storeNew(zxid)
-		broadcastRequest(req, epoch, count)
+		log.Println(selfIP, "broadcasting request")
+		broadcastRequest(req, epoch, count, selfIP, failedSends)
 	case Sync:
 		// TODO
 	}
 }
 
-func broadcastRequest(req Request, epoch uint16, count uint16) {
+func broadcastRequest(req Request, epoch uint16, count uint16, selfIP net.Addr, failedSends chan string) {
 	prop := Proposal{
 		StateChange,
 		epoch,
@@ -178,23 +237,88 @@ func broadcastRequest(req Request, epoch uint16, count uint16) {
 		Prop,
 		propJson,
 	}
-	broadcastZabMessage(zab)
+	// log.Println(selfIP, "broadcasting zab", zab)
+	// log.Println(selfIP, "broadcasting prop", prop)
+	broadcastZabMessage(zab, selfIP, failedSends)
 }
 
 func makeACK(msg ZabMessage) (ack ZabMessage) {
+	ack.Content = make([]byte, len(msg.Content))
 	copy(ack.Content, msg.Content)
 	ack.ZabType = ACK
 	return
 }
 
-func sendZabMessage(dest int, msg ZabMessage)
-func broadcastZabMessage(msg ZabMessage)
-func receiveZabMessage(src int, msg ZabMessage) {
-	ack := makeACK(msg)
-	propJSON, err := json.Marshal(ack)
+func deserialise[m Deserialisable](serialised []byte, msgPtr *m) {
+	err := json.Unmarshal(serialised, msgPtr)
 	if err != nil {
-		log.Fatal("Error on JSON conversion", err)
+		log.Fatal("Could not convert ", reflect.TypeOf(msgPtr), " from bytes: ", err)
 	}
-	message := ZabMessage{Prop, propJSON}
-	go sendZabMessage(0, message)
+}
+
+func sendZabMessage(dest net.Addr, msg ZabMessage, failedSend chan string, selfIP net.Addr) {
+	serial, err := json.Marshal(msg)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	cxn.SendMessage(cxn.NetworkMessage{Remote: dest, Message: serial}, selfIP, failedSend)
+}
+func broadcastZabMessage(msg ZabMessage, selfIP net.Addr, failedSends chan string) {
+	serial, err := json.Marshal(msg)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+	// log.Println(selfIP, "broadcasting network msg")
+	cxn.Broadcast(serial, selfIP, failedSends)
+}
+
+func SendRequest(req Request, failedSends chan string, selfiP net.Addr) {
+	if currentCoordinator == selfiP {
+		receiveRequest(req, failedSends, selfiP)
+		return
+	}
+
+	serial, err := json.Marshal(req)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+	msg := ZabMessage{
+		Req,
+		serial,
+	}
+	sendZabMessage(currentCoordinator, msg, failedSends, selfiP)
+}
+
+func ReceiveZabMessage(src net.Addr, msgSerial []byte, failedSends chan string, selfIP net.Addr) {
+	var msg ZabMessage
+	deserialise(msgSerial, &msg)
+	// log.Println(selfIP, "received ZAB message from", src, ": ", msg.Content)
+	if msg.ZabType == Prop {
+		// Acknowledge any non-commit proposals
+		var prp Proposal
+		deserialise(msg.Content, &prp)
+		if prp.PropType != Commit {
+			ack := makeACK(msg)
+			go sendZabMessage(src, ack, failedSends, selfIP)
+		}
+	} else {
+		// log.Println(selfIP, "received message from", src, "of type", msg.ZabType)
+	}
+	switch msg.ZabType {
+	case Req:
+		var req Request
+		deserialise(msg.Content, &req)
+		go receiveRequest(req, failedSends, selfIP)
+	case Prop:
+		var prop Proposal
+		deserialise(msg.Content, &prop)
+		go receiveProposal(prop, src)
+	case ACK:
+		var ack Proposal
+		deserialise(msg.Content, &ack)
+		go receiveACK(ack, failedSends, selfIP)
+	}
 }
