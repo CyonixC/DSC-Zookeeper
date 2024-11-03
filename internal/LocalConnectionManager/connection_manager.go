@@ -52,28 +52,36 @@ func Init(address net.Addr) (receive_channel chan NetworkMessage) {
 	return
 }
 
-func SendMessage(toSend NetworkMessage, selfIp net.Addr, success chan bool) {
-	ch, _ := cmap.load(toSend.Remote)
-	toSend.Remote = selfIp
+func sendMsgWithTimeout(sendChan chan NetworkMessage, toSend NetworkMessage, dest string, failedSend chan string) {
 	defer func() {
 		// Fail on closed channel
 		if r := recover(); r != nil {
-			success <- false
+			failedSend <- dest
 		}
 	}()
 	timer := time.NewTimer(time.Duration(sendMessageTimeoutSeconds) * time.Second)
 	select {
-	case ch <- toSend:
-		success <- true
+	case sendChan <- toSend:
+		break
 	case <-timer.C:
-		success <- false
+		failedSend <- dest
 	}
 }
 
-func Broadcast(toSend []byte, selfIp net.Addr) {
+func SendMessage(toSend NetworkMessage, selfIp net.Addr, failedSend chan string) {
+	dest := toSend.Remote.String()
+	ch, _ := cmap.load(toSend.Remote)
+	toSend.Remote = selfIp
+	sendMsgWithTimeout(ch, toSend, dest, failedSend)
+}
+
+func Broadcast(toSend []byte, selfIp net.Addr, failedSends chan string) {
 	cmap.RLock()
 	defer cmap.RUnlock()
-	for _, ch := range cmap.connMap {
-		go func() { ch <- NetworkMessage{selfIp, toSend} }()
+	for ip, ch := range cmap.connMap {
+		if selfIp.String() == ip {
+			continue
+		}
+		go sendMsgWithTimeout(ch, NetworkMessage{selfIp, toSend}, ip, failedSends)
 	}
 }
