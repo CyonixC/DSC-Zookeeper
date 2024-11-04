@@ -27,3 +27,8 @@ proposals.SendWriteRequest(newVar, failedSends, selfIP)
 ```
 
 This function also takes in the current machine's IP address and a "failed sending" channel where the IP addresses of any machines it fails to send to is returned.
+
+## TODO
+Currently the Proposals queue is still held in memory, not on disk. Need to make committed proposals be written to disk.
+
+Yet to implement the SYNC protocol for when a new coordinator is elected and we need nodes to sync proposals with each other.
