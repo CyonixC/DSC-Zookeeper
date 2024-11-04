@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 // currently store znodes in this project's directory
@@ -195,4 +196,36 @@ func childrenZnode(path string) ([]string, error) {
 		}
 	}
 	return children, nil
+}
+
+// seqname returns a name for a znode with a sequence number.
+// Will return the modified path.
+// Meant to be used to create znodes with the sequential flag set.
+func seqname(path string) (string, error) {
+	parentpath := filepath.Dir(path)
+	filename := filepath.Base(path)
+	siblings, err := childrenZnode(parentpath)
+	if err != nil {
+		return "", err
+	}
+	maxseq := 0
+	for _, sibling := range siblings {
+		index := strings.LastIndex(sibling, "_")
+		if index == -1 {
+			continue
+		}
+		if sibling[:index] == filename {
+			seq, err := strconv.Atoi(sibling[index+1:])
+			if err != nil {
+				//skip if not a number
+				continue
+			}
+			if seq > maxseq {
+				maxseq = seq
+			}
+		}
+	}
+	newfilename := filename + "_" + strconv.Itoa(maxseq+1)
+
+	return filepath.Join(parentpath, newfilename), nil
 }

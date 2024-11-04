@@ -29,13 +29,17 @@ func InitZnodeServer() (map[string]*ZNode, error) {
 // Returns the name of the znode created, or an error if znode already exists
 // If sequential flag is set, znode name will be modified to include a sequence number
 func Create(znodeCache map[string]*ZNode, path string, data []byte, ephemeral bool, sequential bool) (string, error) {
+	var err error
 
 	if sequential {
-		//TODO modify path according to sequential flag behaviour, probably making us of childrenZnode(path)
+		path, err = seqname(path)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	//version numbering starting at 1
-	_, err := createZnode(znodeCache, path, 1, ephemeral, data)
+	_, err = createZnode(znodeCache, path, 1, ephemeral, data)
 
 	if err != nil {
 		return "", err
