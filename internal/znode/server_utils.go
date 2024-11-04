@@ -59,6 +59,7 @@ func Delete(znodeCache map[string]*ZNode, path string, version int) error {
 		return err
 	}
 
+	//TODO no version checking if version = -1
 	if znode.Version != version {
 		return errors.New("version does not match")
 	}
@@ -108,6 +109,7 @@ func SetData(znodeCache map[string]*ZNode, path string, data []byte, version int
 		return err
 	}
 
+	//TODO no version checking if version = -1
 	if znode.Version != version {
 		return errors.New("version does not match")
 	}
