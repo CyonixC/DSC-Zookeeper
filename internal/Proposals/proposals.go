@@ -210,7 +210,9 @@ func sendRequest(req Request, failedSends chan string, selfIP net.Addr) {
 }
 
 // Process a Zab message received from the network.
-func ProcessZabMessage(src net.Addr, msgSerial []byte, failedSends chan string, selfIP net.Addr) {
+func ProcessZabMessage(netMsg cxn.NetworkMessage, failedSends chan string, selfIP net.Addr) {
+	src := netMsg.Remote
+	msgSerial := netMsg.Message
 	var msg ZabMessage
 	deserialise(msgSerial, &msg)
 	if msg.ZabType == Prop {
