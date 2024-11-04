@@ -35,10 +35,20 @@ func createZnode(znodeCache map[string]*ZNode, path string, version int, epherme
 		return nil, errors.New("znode already exists")
 	}
 
-	//TODO check that parent znode exists, should be one directory up
+	//check if parent znode exists, if not, znode cannot be created
 	parentpath := filepath.Dir(path)
 	if parentpath != "." && !existsZnode(znodeCache, parentpath) {
 		return nil, errors.New("parent znode does not exist")
+	}
+	//check if parent znode is ephermeral, if so, znode cannot be created
+	//Assumes that if ephemeral, znode will be in cache, ephemeral info currently not stored in filesystem
+	//Might want to move parent and ephermeral check to server side
+	parentznode, err := getZnode(znodeCache, parentpath)
+	if err != nil {
+		return nil, err
+	}
+	if parentznode.Ephermeral {
+		return nil, errors.New("parent znode is ephermeral, it cannot have children")
 	}
 
 	znode := &ZNode{
@@ -46,7 +56,7 @@ func createZnode(znodeCache map[string]*ZNode, path string, version int, epherme
 		Version:    version, //May not start at 1, i.e. syncing with other servers
 		Ephermeral: ephermeral,
 	}
-	err := writeZNode(znode, data)
+	err = writeZNode(znode, data)
 	if err != nil {
 		return nil, err
 	}
