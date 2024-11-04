@@ -108,6 +108,9 @@ func SetData(znodeCache map[string]*ZNode, path string, data []byte, version int
 		return errors.New("version does not match")
 	}
 
+	//increment version number and write
+	//currently just leaves old version in storage, may be useful for fault tolerance?
+	znode.Version++
 	err = writeZNode(znode, data)
 	if err != nil {
 		return err

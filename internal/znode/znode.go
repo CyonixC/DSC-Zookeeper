@@ -35,6 +35,12 @@ func createZnode(znodeCache map[string]*ZNode, path string, version int, epherme
 		return nil, errors.New("znode already exists")
 	}
 
+	//TODO check that parent znode exists, should be one directory up
+	parentpath := filepath.Dir(path)
+	if parentpath != "." && !existsZnode(znodeCache, parentpath) {
+		return nil, errors.New("parent znode does not exist")
+	}
+
 	znode := &ZNode{
 		Path:       path,
 		Version:    version, //May not start at 1, i.e. syncing with other servers
@@ -53,11 +59,17 @@ func createZnode(znodeCache map[string]*ZNode, path string, version int, epherme
 // writeZNode creates/overwrites znode in the filesystem, returns nil if successful.
 // Does not handle version checking and will overwrite if version exists, be sure to check version
 func writeZNode(znode *ZNode, data []byte) error {
-	path := filepath.Join(".", znodeDir, znode.Path, strconv.Itoa(znode.Version)+".txt")
-	//TODO modify implementation such that will error if overwriting existing version (if we establish that should not happen)
+	path := filepath.Join(".", znodeDir, znode.Path)
+	//create dir for znode
+	err := os.MkdirAll(path, 0755)
+	if err != nil {
+		return err
+	}
 
 	//create a file in the path
-	err := os.WriteFile(path, data, 0644)
+	//TODO modify implementation such that will error if overwriting existing version (if we establish that should not happen)
+	path = filepath.Join(path, strconv.Itoa(znode.Version)+".txt")
+	err = os.WriteFile(path, data, 0644)
 	return err
 }
 
