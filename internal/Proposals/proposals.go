@@ -46,7 +46,7 @@ func processProposal(prop Proposal, source net.Addr, selfIP net.Addr) {
 	case StateChange:
 		if debug {
 			propZxid := getZXIDAsInt(prop.EpochNum, prop.CountNum)
-			log.Println(source.String(), "receives proposal with zxid", propZxid)
+			log.Println(selfIP.String(), "receives proposal with zxid", propZxid)
 		}
 		proposalsQueue.enqueue(prop)
 	case Commit:
