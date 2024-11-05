@@ -10,16 +10,15 @@ import (
 )
 
 func help() {
-	fmt.Println("Available commands: create, delete, exist, get, set, children, help, exit")
+	fmt.Println("Available commands: create, delete, set, exist, get, children, help, exit")
 }
 
 func main() {
-	cache, _ := znode.InitZnodeServer()
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Println("Interactive Mode. Type 'help' for a list of commands.")
+	help()
 
 	for {
-		help()
 		fmt.Print("> ")
 		scanner.Scan() // Reads the input
 		command := strings.TrimSpace(scanner.Text())
@@ -36,15 +35,23 @@ func main() {
 			input := strings.TrimSpace(scanner.Text())
 			data := []byte(input)
 
-			fmt.Print("Ephemeral? (y/n): ")
-			scanner.Scan()
-			ephemeral := strings.TrimSpace(scanner.Text()) == "y"
-
 			fmt.Print("Sequential? (y/n): ")
 			scanner.Scan()
 			sequential := strings.TrimSpace(scanner.Text()) == "y"
 
-			name, err := znode.Create(cache, path, data, ephemeral, sequential)
+			req, err := znode.Encode_write_request("create", path, data, 0, false, sequential)
+			if err != nil {
+				fmt.Printf("Error encoding request: %v\n", err)
+				continue
+			}
+
+			check, err := znode.Check(req)
+			if !check {
+				fmt.Printf("Error checking request: %v\n", err)
+				continue
+			}
+
+			name, err := znode.Write(req)
 			if err != nil {
 				fmt.Printf("Error creating znode: %v\n", err)
 			} else {
@@ -64,45 +71,23 @@ func main() {
 				continue
 			}
 
-			err = znode.Delete(cache, path, version)
+			req, err := znode.Encode_write_request("delete", path, nil, version, false, false)
+			if err != nil {
+				fmt.Printf("Error encoding request: %v\n", err)
+				continue
+			}
+
+			check, err := znode.Check(req)
+			if !check {
+				fmt.Printf("Error checking request: %v\n", err)
+				continue
+			}
+
+			_, err = znode.Write(req)
 			if err != nil {
 				fmt.Printf("Error deleting znode: %v\n", err)
 			} else {
-				fmt.Println("Znode deleted.")
-			}
-
-		case "exist":
-			fmt.Print("Enter path: ")
-			scanner.Scan()
-			path := strings.TrimSpace(scanner.Text())
-
-			fmt.Print("Watch? (y/n): ")
-			scanner.Scan()
-			watch := strings.TrimSpace(scanner.Text()) == "y"
-
-			exists := znode.Exists(cache, path, watch)
-
-			if exists {
-				fmt.Println("Znode exists.")
-			} else {
-				fmt.Println("Znode does not exist.")
-			}
-
-		case "get":
-			fmt.Print("Enter path: ")
-			scanner.Scan()
-			path := strings.TrimSpace(scanner.Text())
-
-			fmt.Print("Watch? (y/n): ")
-			scanner.Scan()
-			watch := strings.TrimSpace(scanner.Text()) == "y"
-
-			data, znode, err := znode.GetData(cache, path, watch)
-			if err != nil {
-				fmt.Printf("Error getting znode: %v\n", err)
-			} else {
-				fmt.Printf("Data: %s\n", data)
-				fmt.Printf("Version: %d\n", znode.Version)
+				fmt.Printf("Znode deleted: %s\n", path)
 			}
 
 		case "set":
@@ -123,11 +108,49 @@ func main() {
 				continue
 			}
 
-			err = znode.SetData(cache, path, data, version)
+			req, err := znode.Encode_write_request("setdata", path, data, version, false, false)
 			if err != nil {
-				fmt.Printf("Error setting znode: %v\n", err)
+				fmt.Printf("Error encoding request: %v\n", err)
+				continue
+			}
+
+			check, err := znode.Check(req)
+			if !check {
+				fmt.Printf("Error checking request: %v\n", err)
+				continue
+			}
+
+			_, err = znode.Write(req)
+			if err != nil {
+				fmt.Printf("Error setting data: %v\n", err)
 			} else {
-				fmt.Println("Znode set.")
+				fmt.Printf("Znode updated: %s\n", path)
+			}
+
+		case "exist":
+			fmt.Print("Enter path: ")
+			scanner.Scan()
+			path := strings.TrimSpace(scanner.Text())
+
+			exists := znode.Exists(path)
+
+			if exists {
+				fmt.Println("Znode exists.")
+			} else {
+				fmt.Println("Znode does not exist.")
+			}
+
+		case "get":
+			fmt.Print("Enter path: ")
+			scanner.Scan()
+			path := strings.TrimSpace(scanner.Text())
+
+			znode, err := znode.GetData(path)
+			if err != nil {
+				fmt.Printf("Error getting znode: %v\n", err)
+			} else {
+				fmt.Printf("Data: %s\n", znode.Data)
+				fmt.Printf("Version: %d\n", znode.Version)
 			}
 
 		case "children":
@@ -135,11 +158,7 @@ func main() {
 			scanner.Scan()
 			path := strings.TrimSpace(scanner.Text())
 
-			fmt.Print("Watch? (y/n): ")
-			scanner.Scan()
-			watch := strings.TrimSpace(scanner.Text()) == "y"
-
-			children, err := znode.GetChildren(cache, path, watch)
+			children, err := znode.GetChildren(path)
 			if err != nil {
 				fmt.Printf("Error getting children: %v\n", err)
 			} else {
