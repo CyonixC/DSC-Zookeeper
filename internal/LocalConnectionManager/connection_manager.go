@@ -1,7 +1,6 @@
 package localconnectionmanager
 
 import (
-	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -45,9 +44,6 @@ func Init(address net.Addr) (receive_channel chan NetworkMessage) {
 	receive_channel = make(chan NetworkMessage)
 	cmap.store(address, receive_channel)
 	cmap.RLock()
-	for a, b := range cmap.connMap {
-		fmt.Println(a, b)
-	}
 	cmap.RUnlock()
 	return
 }
