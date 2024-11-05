@@ -13,6 +13,7 @@ const (
 	Req ZabMessageType = iota
 	Prop
 	ACK
+	Err
 )
 
 // Proposal type - message sent from coordinator to non-coordinators

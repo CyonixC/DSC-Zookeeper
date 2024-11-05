@@ -3,17 +3,52 @@ package main
 import (
 	"bufio"
 	"fmt"
+	cxn "local/zookeeper/internal/LocalConnectionManager"
+	prp "local/zookeeper/internal/Proposals"
 	"local/zookeeper/internal/znode"
+	"log"
+	"net"
 	"os"
 	"strconv"
 	"strings"
 )
 
+var addresses = []string{"192.168.10.1", "192.168.10.2", "192.168.10.3", "192.168.10.4", "192.168.10.5"}
+
 func help() {
 	fmt.Println("Available commands: create, delete, set, exist, get, children, help, exit")
 }
 
+func client(selfIP net.Addr) {
+	recv_channel := cxn.Init(selfIP)
+	failedSends := make(chan string)
+	go receiveMsg(recv_channel, failedSends, selfIP)
+	go func() {
+		for str := range failedSends {
+			log.Println(selfIP, "failed to send to", str)
+		}
+	}()
+	if selfIP.String() == "192.168.10.6" {
+		interactive(failedSends, selfIP)
+	}
+}
+
+func receiveMsg(recv_channel chan cxn.NetworkMessage, failedSends chan string, selfIP net.Addr) {
+	for msg := range recv_channel {
+		go prp.ProcessZabMessage(msg, failedSends, selfIP)
+	}
+}
+
 func main() {
+	for _, addr := range addresses {
+		netaddr, _ := net.ResolveIPAddr("ip", addr)
+		go client(netaddr)
+	}
+	netaddr, _ := net.ResolveIPAddr("ip", "192.168.10.6")
+	client(netaddr)
+}
+
+func interactive(failedSends chan string, ip net.Addr) {
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Println("Interactive Mode. Type 'help' for a list of commands.")
 	help()
@@ -45,18 +80,7 @@ func main() {
 				continue
 			}
 
-			check, err := znode.Check(req)
-			if !check {
-				fmt.Printf("Error checking request: %v\n", err)
-				continue
-			}
-
-			name, err := znode.Write(req)
-			if err != nil {
-				fmt.Printf("Error creating znode: %v\n", err)
-			} else {
-				fmt.Printf("Znode created: %s\n", name)
-			}
+			prp.SendWriteRequest(req, failedSends, ip)
 
 		case "delete":
 			fmt.Print("Enter path: ")
@@ -77,18 +101,7 @@ func main() {
 				continue
 			}
 
-			check, err := znode.Check(req)
-			if !check {
-				fmt.Printf("Error checking request: %v\n", err)
-				continue
-			}
-
-			_, err = znode.Write(req)
-			if err != nil {
-				fmt.Printf("Error deleting znode: %v\n", err)
-			} else {
-				fmt.Printf("Znode deleted: %s\n", path)
-			}
+			prp.SendWriteRequest(req, failedSends, ip)
 
 		case "set":
 			fmt.Print("Enter path: ")
@@ -114,18 +127,7 @@ func main() {
 				continue
 			}
 
-			check, err := znode.Check(req)
-			if !check {
-				fmt.Printf("Error checking request: %v\n", err)
-				continue
-			}
-
-			_, err = znode.Write(req)
-			if err != nil {
-				fmt.Printf("Error setting data: %v\n", err)
-			} else {
-				fmt.Printf("Znode updated: %s\n", path)
-			}
+			prp.SendWriteRequest(req, failedSends, ip)
 
 		case "exist":
 			fmt.Print("Enter path: ")
