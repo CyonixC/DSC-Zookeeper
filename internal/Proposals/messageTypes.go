@@ -17,7 +17,7 @@ const (
 )
 
 // Proposal type - message sent from coordinator to non-coordinators
-type ProposalType int
+type ProposalType uint8
 type Proposal struct {
 	PropType ProposalType
 	EpochNum uint16
@@ -45,4 +45,16 @@ const (
 
 type Deserialisable interface {
 	ZabMessage | Proposal | Request
+}
+
+func (pt ProposalType) ToStr() string {
+	switch pt {
+	case Commit:
+		return "Commit"
+	case StateChange:
+		return "StateChange"
+	case NewLeader:
+		return "NewLeader"
+	}
+	return "unknown"
 }

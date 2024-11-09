@@ -3,10 +3,12 @@ package proposals
 // Contains basic implementation of proposal functions. Currently just operates on a single variable as the "data".
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	cxn "local/zookeeper/internal/LocalConnectionManager"
 	"local/zookeeper/internal/znode"
 	"log"
+	"log/slog"
 	"net"
 	"reflect"
 	"sync"
@@ -36,8 +38,17 @@ func getZXIDAsInt(epoch uint16, count uint16) uint32 {
 	return (uint32(epoch) << 16) | uint32(count)
 }
 
+func bytesToUint32(bytes []byte) uint32 {
+	return binary.NativeEndian.Uint32(bytes)
+}
+func uint32ToBytes(num uint32) []byte {
+	bytes := make([]byte, 4)
+	binary.NativeEndian.PutUint32(bytes, num)
+	return bytes
+}
+
 // Process a received proposal
-func processProposal(prop Proposal, source net.Addr, selfIP net.Addr) {
+func processProposal(prop Proposal, source net.Addr, failedSend chan string, selfIP net.Addr) {
 	if currentCoordinator.String() != source.String() {
 		// Proposal is not from the current coordinator; ignore it.
 		return
@@ -46,14 +57,19 @@ func processProposal(prop Proposal, source net.Addr, selfIP net.Addr) {
 	case StateChange:
 		if debug {
 			propZxid := getZXIDAsInt(prop.EpochNum, prop.CountNum)
-			log.Println(source.String(), "receives proposal with zxid", propZxid)
+			slog.Info(selfIP.String(), "receives proposal with zxid", propZxid)
 		}
 		proposalsQueue.enqueue(prop)
 	case Commit:
 		processCommitProposal(selfIP)
 	case NewLeader:
-		// TODO
-		return
+		currentEpoch, currentCount := zxidCounter.check()
+		currentZxid := getZXIDAsInt(currentEpoch, currentCount)
+		syncRequest := Request{
+			ReqType: Sync,
+			Content: uint32ToBytes(currentZxid),
+		}
+		sendRequest(syncRequest, failedSend, selfIP)
 	default:
 		log.Fatal("Received proposal with unknown type")
 	}
@@ -68,7 +84,7 @@ func processCommitProposal(selfIP net.Addr) {
 	}
 	if debug {
 		propZxid := getZXIDAsInt(prop.EpochNum, prop.CountNum)
-		log.Println(selfIP.String(), "committing proposal with zxid", propZxid)
+		slog.Info(selfIP.String(), "committing proposal with zxid", propZxid)
 	}
 	processPropUpdate(prop.Content)
 }
@@ -256,7 +272,7 @@ func ProcessZabMessage(netMsg cxn.NetworkMessage, failedSends chan string, selfI
 	case Prop:
 		var prop Proposal
 		deserialise(msg.Content, &prop)
-		go processProposal(prop, src, selfIP)
+		go processProposal(prop, src, failedSends, selfIP)
 	case ACK:
 		var ack Proposal
 		deserialise(msg.Content, &ack)
