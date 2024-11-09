@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"net"
 	"reflect"
-	"sync"
 )
 
 // TODO replace this with a system-wide variable in the actual implementation
@@ -25,13 +24,7 @@ const debug = true
 var zxidCounter ZXIDCounter
 var ackCounter AckCounter = AckCounter{ackTracker: make(map[uint32]int)}
 var proposalsQueue SafeQueue[Proposal]
-var lockedVar = struct {
-	sync.RWMutex
-	num int
-}{
-	sync.RWMutex{},
-	0,
-}
+var syncTrack SyncTracker
 
 // Convert the epoch and count numbers to a single zxid
 func getZXIDAsInt(epoch uint16, count uint16) uint32 {
@@ -51,24 +44,47 @@ func uint32ToBytes(num uint32) []byte {
 func processProposal(prop Proposal, source net.Addr, failedSend chan string, selfIP net.Addr) {
 	if currentCoordinator.String() != source.String() {
 		// Proposal is not from the current coordinator; ignore it.
+		// TODO trigger an election
 		return
 	}
 	switch prop.PropType {
 	case StateChange:
-		if debug {
-			propZxid := getZXIDAsInt(prop.EpochNum, prop.CountNum)
-			slog.Info(selfIP.String(), "receives proposal with zxid", propZxid)
+		propZxid := getZXIDAsInt(prop.EpochNum, prop.CountNum)
+		slog.Info(selfIP.String(), "receives proposal with zxid", propZxid)
+		zxidCounter.incCount()
+
+		// If we're currently syncing, automatically save and commit.
+		syncing, zxidCap := syncTrack.readVals()
+		if syncing && propZxid <= zxidCap {
+			SaveProposal(prop)
+			processPropUpdate(prop.Content)
+		} else {
+			// Otherwise, normal operation
+			proposalsQueue.enqueue(prop)
 		}
-		proposalsQueue.enqueue(prop)
 	case Commit:
 		processCommitProposal(selfIP)
 	case NewLeader:
+		// Immediately commit all held proposals
+		for !proposalsQueue.isEmpty() {
+			poppedProposal, _ := proposalsQueue.dequeue()
+			processPropUpdate(poppedProposal.Content)
+		}
+
+		latestZxid := bytesToUint32(prop.Content)
 		currentEpoch, currentCount := zxidCounter.check()
 		currentZxid := getZXIDAsInt(currentEpoch, currentCount)
+		// Already holding the latest proposal, just return.
+		if currentZxid == latestZxid {
+			return
+		}
+
+		// Need to get updates from the leader.
 		syncRequest := Request{
 			ReqType: Sync,
 			Content: uint32ToBytes(currentZxid),
 		}
+
 		sendRequest(syncRequest, failedSend, selfIP)
 	default:
 		log.Fatal("Received proposal with unknown type")
@@ -120,7 +136,7 @@ func broadcastCommit(failedSends chan string, selfIP net.Addr) {
 	broadcastZabMessage(zab, selfIP, failedSends)
 }
 
-// Process a received STATE_UPDATE proposal. Just store it in the queue.
+// Write a received STATE_UPDATE proposal
 func processPropUpdate(writeData []byte) {
 	_, err := znode.Write(writeData)
 	if err != nil {
@@ -255,13 +271,19 @@ func ProcessZabMessage(netMsg cxn.NetworkMessage, failedSends chan string, selfI
 	msgSerial := netMsg.Message
 	var msg ZabMessage
 	deserialise(msgSerial, &msg)
+
+	// Check syncing
 	if msg.ZabType == Prop {
-		// Only acknowledge proposals that are not COMMIT proposals
 		var prp Proposal
 		deserialise(msg.Content, &prp)
-		if prp.PropType != Commit {
-			ack := makeACK(msg)
-			go sendZabMessage(src, ack, failedSends, selfIP)
+		if prp.PropType == NewLeader {
+			latestZxid := bytesToUint32(prp.Content)
+			currentEpoch, currentCount := zxidCounter.check()
+			currentZxid := getZXIDAsInt(currentEpoch, currentCount)
+			// If already holding the latest proposal, just ACK
+			if currentZxid < latestZxid {
+				syncTrack.newSync(latestZxid, msg)
+			}
 		}
 	}
 	switch msg.ZabType {
@@ -277,5 +299,37 @@ func ProcessZabMessage(netMsg cxn.NetworkMessage, failedSends chan string, selfI
 		var ack Proposal
 		deserialise(msg.Content, &ack)
 		go processACK(ack, failedSends, selfIP)
+	}
+
+	// ACK section
+	if msg.ZabType == Prop {
+		// Only acknowledge proposals that are StateChange
+		var prp Proposal
+		deserialise(msg.Content, &prp)
+		if prp.PropType == StateChange {
+			ack := makeACK(msg)
+			go sendZabMessage(src, ack, failedSends, selfIP)
+		} else if prp.PropType == NewLeader {
+			latestZxid := bytesToUint32(prp.Content)
+			currentEpoch, currentCount := zxidCounter.check()
+			currentZxid := getZXIDAsInt(currentEpoch, currentCount)
+			// If already holding the latest proposal, just ACK
+			if currentZxid >= latestZxid {
+				ack := makeACK(msg)
+				go sendZabMessage(src, ack, failedSends, selfIP)
+			}
+		}
+	}
+
+	// Check syncing. If synced, ack the NewLeader proposal.
+	syncing, zxidCap := syncTrack.readVals()
+	if syncing {
+		currentEpoch, currentCount := zxidCounter.check()
+		currentZxid := getZXIDAsInt(currentEpoch, currentCount)
+		if zxidCap <= currentZxid {
+			syncMsg := syncTrack.getStoredProposal()
+			ack := makeACK(syncMsg)
+			go sendZabMessage(src, ack, failedSends, selfIP)
+		}
 	}
 }
