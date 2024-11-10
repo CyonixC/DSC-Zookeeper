@@ -26,3 +26,11 @@ type VersionError struct {
 func (e *VersionError) Error() string {
 	return e.Msg
 }
+
+type CriticalError struct {
+	Msg string
+}
+
+func (e *CriticalError) Error() string {
+	return e.Msg
+}

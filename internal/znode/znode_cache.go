@@ -16,11 +16,13 @@ func Init_cache() (*ZNodeCache, error) {
 	znodecache := &ZNodeCache{cache: make(map[string]*ZNode)}
 	// ensure base znode exists in storage (for checking children)
 	if !Exists(".") {
-		base_znode, err := init_base_znode()
+		base_znode, session_znode, err := init_base_znode()
 		if err != nil {
 			return nil, err
 		}
 		znodecache.cache[base_znode.Path] = base_znode
+		// manually add sessiondir to cache to avoid it being counted as a child of base znode
+		znodecache.cache[session_znode.Path] = session_znode
 	} else {
 		// if base znode exists, add to cache
 		base_znode, err := GetData(".")
@@ -28,9 +30,20 @@ func Init_cache() (*ZNodeCache, error) {
 			return nil, err
 		}
 		znodecache.cache[base_znode.Path] = base_znode
+		session_znode, err := GetData(sessionDir)
+		if err != nil {
+			return nil, err
+		}
+		znodecache.cache[session_znode.Path] = session_znode
 	}
 
+	// populate cache with all children of znodeDir
 	err := populate_cache_layer(znodecache, ".")
+	if err != nil {
+		return nil, err
+	}
+	// populate cache with all children of sessionDir
+	err = populate_cache_layer(znodecache, sessionDir)
 	if err != nil {
 		return nil, err
 	}
@@ -39,17 +52,27 @@ func Init_cache() (*ZNodeCache, error) {
 }
 
 // init_base_znode initializes the base znode in storage
+// also inits sessionDir znode, which stores session znodes
 // should exist unless system is brand new
-func init_base_znode() (*ZNode, error) {
+func init_base_znode() (*ZNode, *ZNode, error) {
 	base_znode := &ZNode{
 		Path: ".",
 		Data: []byte("This is the base znode, it should not be deleted. This is used to store info of children of the root znode."),
 	}
 	err := write_op(base_znode)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return base_znode, nil
+
+	session_znode := &ZNode{
+		Path: sessionDir,
+		Data: []byte("This is the session znode, it should not be deleted. This is used to store session info."),
+	}
+	err = write_op(session_znode)
+	if err != nil {
+		return nil, nil, err
+	}
+	return base_znode, session_znode, nil
 }
 
 // populate_cache_layer populates the cache with all children of the znode with specified path

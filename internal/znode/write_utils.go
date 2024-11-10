@@ -19,12 +19,13 @@ func Write(data []byte) (string, error) {
 	switch req.Request {
 
 	case "create":
+		//TODO somehow make the writes atomic?
 		// update parent znode children
 		parentpath := filepath.Dir(req.Znode.Path)
 		// if is base of znodedir, ensure base znode exists in case of this being the first znode created
 		if parentpath == "." {
 			if !Exists(".") {
-				_, err := init_base_znode()
+				_, _, err := init_base_znode()
 				if err != nil {
 					return "", err
 				}
@@ -41,26 +42,56 @@ func Write(data []byte) (string, error) {
 			return "", err
 		}
 
+		// if ephemeral, update session znode
+		if req.Znode.Ephemeral != "" {
+			sessionpath := filepath.Join(sessionDir, req.Znode.Ephemeral)
+			session_znode, err := GetData(sessionpath)
+			if err != nil {
+				return "", err
+			}
+			session_data := &Session{}
+			err = json.Unmarshal(session_znode.Data, session_data)
+			if err != nil {
+				return "", err
+			}
+			session_data.EphemeralNodes = append(session_data.EphemeralNodes, req.Znode.Path)
+			session_znode.Data, err = json.Marshal(session_data)
+			if err != nil {
+				return "", err
+			}
+			err = write_op(session_znode)
+			if err != nil {
+				return "", err
+			}
+		}
+
+		// write session update
 		name := filepath.Base(req.Znode.Path)
 		return name, write_op(&req.Znode)
 	case "setdata":
 		return "", write_op(&req.Znode)
 	case "delete":
-		// update parent znode children
-		parentpath := filepath.Dir(req.Znode.Path)
-		parent_znode, err := GetData(parentpath)
+		return "", delete_op(&req.Znode)
+	case "delete_session":
+		// delete all ephemeral nodes
+		session_znode, err := GetData(req.Znode.Path)
 		if err != nil {
 			return "", err
 		}
-		for i, child := range parent_znode.Children {
-			if child == filepath.Base(req.Znode.Path) {
-				parent_znode.Children = append(parent_znode.Children[:i], parent_znode.Children[i+1:]...)
-				break
+		session_data := &Session{}
+		err = json.Unmarshal(session_znode.Data, session_data)
+		if err != nil {
+			return "", &CriticalError{"Crictial Error! session znode data is invalid"}
+		}
+		for _, znodepath := range session_data.EphemeralNodes {
+			znode, err := GetData(znodepath)
+			if err != nil {
+				return "", err
 			}
-		}
-		err = write_op(parent_znode)
-		if err != nil {
-			return "", err
+			err = delete_op(znode)
+			if err != nil {
+				return "", err
+			}
 		}
 
 		return "", delete_op(&req.Znode)
@@ -80,9 +111,27 @@ func write_op(znode *ZNode) error {
 }
 
 // delete_op deletes a znode in the filesystem and removes from cache.
-// currently if version matches, is a recursive delete_op, do we newed to check for children?
+// also removes znode from parent znode children.
+// currently is a recursive delete_op, do we need to check for children?
 func delete_op(znode *ZNode) error {
-	err := deleteZnode(znode)
+	// update parent znode children
+	parentpath := filepath.Dir(znode.Path)
+	parent_znode, err := GetData(parentpath)
+	if err != nil {
+		return err
+	}
+	for i, child := range parent_znode.Children {
+		if child == filepath.Base(znode.Path) {
+			parent_znode.Children = append(parent_znode.Children[:i], parent_znode.Children[i+1:]...)
+			break
+		}
+	}
+	err = write_op(parent_znode)
+	if err != nil {
+		return err
+	}
+
+	err = deleteZnode(znode)
 	if err != nil {
 		return err
 	}

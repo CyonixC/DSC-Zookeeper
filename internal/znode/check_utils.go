@@ -61,6 +61,12 @@ func Check(cache *ZNodeCache, data []byte) ([]byte, error) {
 			return nil, err
 		}
 		return data, nil
+	case "delete_session":
+		err = check_delete_session(cache, &req.Znode)
+		if err != nil {
+			return nil, err
+		}
+		return data, nil
 	default:
 		return nil, &InvalidRequestError{"Invalid request: " + req.Request}
 	}
@@ -111,7 +117,7 @@ func check_create(cache *ZNodeCache, znode *ZNode) error {
 	}
 
 	//check if parent node is ephemeral
-	if cache.cache[parentpath].Ephemeral {
+	if cache.cache[parentpath].Ephemeral != "" {
 		return &InvalidRequestError{"parent znode is ephemeral"}
 	}
 
@@ -119,6 +125,26 @@ func check_create(cache *ZNodeCache, znode *ZNode) error {
 	//version number for create should be 0 as write will increment to 1
 	if znode.Version != 0 {
 		return &VersionError{"version number should be 0 for create"}
+	}
+
+	//if ephemeral, check session znode exists
+	if znode.Ephemeral != "" {
+		session_znode, ok := cache.cache[filepath.Join(sessionDir, znode.Ephemeral)]
+		if !ok {
+			return &ExistsError{"session znode does not exist"}
+		}
+		// update session znode in cache
+		session := &Session{}
+		err := json.Unmarshal(session_znode.Data, session)
+		if err != nil {
+			return &CriticalError{"Crictial Error! session znode data is invalid"}
+		}
+		session.EphemeralNodes = append(session.EphemeralNodes, znode.Path)
+		sessiondata, err := json.Marshal(session)
+		if err != nil {
+			return err
+		}
+		session_znode.Data = sessiondata
 	}
 
 	//add znode to cache upon successful check
@@ -179,6 +205,40 @@ func check_delete(cache *ZNodeCache, znode *ZNode) error {
 	cache.cache[parentpath].Children = children
 
 	//remove znode from cache
+	delete(cache.cache, znode.Path)
+
+	return nil
+}
+
+func check_delete_session(cache *ZNodeCache, znode *ZNode) error {
+	//check session znode exists
+	session_znode, err := GetData(znode.Path)
+	if err != nil {
+		return err
+	}
+
+	//remove all ephemeral nodes from cache
+	session_data := &Session{}
+	err = json.Unmarshal(session_znode.Data, session_data)
+	if err != nil {
+		return &CriticalError{"Crictial Error! session znode data is invalid"}
+	}
+	for _, path := range session_data.EphemeralNodes {
+		//remove znode from parent's children
+		parentpath := filepath.Dir(path)
+		children := cache.cache[parentpath].Children
+		for i, child := range children {
+			if child == filepath.Base(path) {
+				children = append(children[:i], children[i+1:]...)
+				break
+			}
+		}
+		cache.cache[parentpath].Children = children
+		//remove znode from cache
+		delete(cache.cache, path)
+	}
+
+	//remove session znode from cache
 	delete(cache.cache, znode.Path)
 
 	return nil

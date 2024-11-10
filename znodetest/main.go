@@ -10,7 +10,7 @@ import (
 )
 
 func help() {
-	fmt.Println("Available commands: create, delete, set, exist, get, children, cache, help, exit")
+	fmt.Println("Available commands: create_session, delete_session, create, delete, set, exist, get, children, cache, help, exit")
 }
 
 func main() {
@@ -24,12 +24,60 @@ func main() {
 	help()
 
 	for {
+		fmt.Println()
 		fmt.Print("> ")
 		scanner.Scan() // Reads the input
 		command := strings.TrimSpace(scanner.Text())
 
 		switch command {
 
+		case "create_session":
+			fmt.Print("Enter session id: ")
+			scanner.Scan()
+			sessionid := strings.TrimSpace(scanner.Text())
+
+			req, err := znode.Encode_create_session(sessionid)
+			if err != nil {
+				fmt.Printf("Error encoding request: %v\n", err)
+				continue
+			}
+
+			updated_req, err := znode.Check(cache, req)
+			if err != nil {
+				fmt.Printf("Error checking request: %v\n", err)
+				continue
+			}
+
+			_, err = znode.Write(updated_req)
+			if err != nil {
+				fmt.Printf("Error creating session: %v\n", err)
+			} else {
+				fmt.Printf("Session created with id: %s\n", sessionid)
+			}
+
+		case "delete_session":
+			fmt.Print("Enter session id: ")
+			scanner.Scan()
+			sessionid := strings.TrimSpace(scanner.Text())
+
+			req, err := znode.Encode_delete_session(sessionid)
+			if err != nil {
+				fmt.Printf("Error encoding request: %v\n", err)
+				continue
+			}
+
+			updated_req, err := znode.Check(cache, req)
+			if err != nil {
+				fmt.Printf("Error checking request: %v\n", err)
+				continue
+			}
+
+			_, err = znode.Write(updated_req)
+			if err != nil {
+				fmt.Printf("Error deleting session: %v\n", err)
+			} else {
+				fmt.Printf("Session deleted with id: %s\n", sessionid)
+			}
 		case "create":
 			fmt.Print("Enter path: ")
 			scanner.Scan()
@@ -40,6 +88,10 @@ func main() {
 			input := strings.TrimSpace(scanner.Text())
 			data := []byte(input)
 
+			fmt.Print("Enter session id: ")
+			scanner.Scan()
+			sessionid := strings.TrimSpace(scanner.Text())
+
 			fmt.Print("Sequential? (y/n): ")
 			scanner.Scan()
 			sequential := strings.TrimSpace(scanner.Text()) == "y"
@@ -48,7 +100,7 @@ func main() {
 			scanner.Scan()
 			ephemeral := strings.TrimSpace(scanner.Text()) == "y"
 
-			req, err := znode.Encode_write_request("create", path, data, 0, ephemeral, sequential)
+			req, err := znode.Encode_create(path, data, ephemeral, sequential, sessionid)
 			if err != nil {
 				fmt.Printf("Error encoding request: %v\n", err)
 				continue
@@ -80,7 +132,7 @@ func main() {
 				continue
 			}
 
-			req, err := znode.Encode_write_request("delete", path, nil, version, false, false)
+			req, err := znode.Encode_delete(path, version)
 			if err != nil {
 				fmt.Printf("Error encoding request: %v\n", err)
 				continue
@@ -117,7 +169,7 @@ func main() {
 				continue
 			}
 
-			req, err := znode.Encode_write_request("setdata", path, data, version, false, false)
+			req, err := znode.Encode_setdata(path, data, version)
 			if err != nil {
 				fmt.Printf("Error encoding request: %v\n", err)
 				continue

@@ -24,7 +24,7 @@ func GetData(path string) (*ZNode, error) {
 	}
 
 	//return nil if znode does not exist
-	return nil, &ExistsError{"znode does not exist"}
+	return nil, &ExistsError{"znode does not exist:" + path}
 }
 
 // children returns the children of a znode.
@@ -38,5 +38,5 @@ func GetChildren(path string) ([]string, error) {
 		}
 		return znode.Children, nil
 	}
-	return nil, &ExistsError{"znode does not exist"}
+	return nil, &ExistsError{"znode does not exist:" + path}
 }

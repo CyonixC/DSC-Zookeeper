@@ -22,7 +22,7 @@ type ZNode struct {
 	Path       string //Path provided by client will be a relative Path in znodeDir, corresponding to znodepath above
 	Data       []byte
 	Version    int
-	Ephemeral  bool
+	Ephemeral  string //empty string if not ephemeral, otherwise contains session id
 	Sequential bool
 	Children   []string
 	//current implementationn avoids storing watch flag in metadata
@@ -105,7 +105,7 @@ func PrintZnode(znode *ZNode) {
 	fmt.Printf("Path: %s\n", znode.Path)
 	fmt.Printf("Data: %s\n", znode.Data)
 	fmt.Printf("Version: %d\n", znode.Version)
-	fmt.Printf("Ephemeral: %v\n", znode.Ephemeral)
+	fmt.Printf("Ephemeral: %s\n", znode.Ephemeral)
 	fmt.Printf("Sequential: %v\n", znode.Sequential)
 	fmt.Printf("Children: %v\n", znode.Children)
 }
