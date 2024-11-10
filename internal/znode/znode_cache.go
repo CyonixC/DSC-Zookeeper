@@ -11,11 +11,11 @@ type ZNodeCache struct {
 	cache map[string]*ZNode
 }
 
-// Init_cache initializes the cache with all znodes in storage
-func Init_cache() (*ZNodeCache, error) {
+// Init_znode_cache initializes the cache with all znodes in storage
+func Init_znode_cache() (*ZNodeCache, error) {
 	znodecache := &ZNodeCache{cache: make(map[string]*ZNode)}
 	// ensure base znode exists in storage (for checking children)
-	if !Exists(".") {
+	if !existsZnode(".") {
 		base_znode, session_znode, err := init_base_znode()
 		if err != nil {
 			return nil, err

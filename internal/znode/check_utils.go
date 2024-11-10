@@ -144,6 +144,7 @@ func check_create(cache *ZNodeCache, znode *ZNode) error {
 		if err != nil {
 			return err
 		}
+		session_znode.Version++
 		session_znode.Data = sessiondata
 	}
 

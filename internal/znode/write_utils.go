@@ -8,12 +8,14 @@ import (
 )
 
 // Write commits znode changes to the filesystem.
-// Returns the name of the znode if request is create, empty string otherwise.
-func Write(data []byte) (string, error) {
+// Returns slice of paths that have been modified, or nil if error encountered.
+// Will contain multiple paths only if a session znode is deleted (deleted ephermeral nodes), else will only contain 1 path.
+// Use to check watchers, also used to get file name for create (filepath.Base)
+func Write(data []byte) ([]string, error) {
 	req := &write_request{}
 	err := json.Unmarshal(data, req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	switch req.Request {
@@ -24,22 +26,23 @@ func Write(data []byte) (string, error) {
 		parentpath := filepath.Dir(req.Znode.Path)
 		// if is base of znodedir, ensure base znode exists in case of this being the first znode created
 		if parentpath == "." {
-			if !Exists(".") {
+			if !existsZnode(".") {
 				_, _, err := init_base_znode()
 				if err != nil {
-					return "", err
+					return nil, err
 				}
 			}
 		}
 
 		parent_znode, err := GetData(parentpath)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		parent_znode.Children = append(parent_znode.Children, filepath.Base(req.Znode.Path))
+		// write parent update
 		err = write_op(parent_znode)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		// if ephemeral, update session znode
@@ -47,56 +50,58 @@ func Write(data []byte) (string, error) {
 			sessionpath := filepath.Join(sessionDir, req.Znode.Ephemeral)
 			session_znode, err := GetData(sessionpath)
 			if err != nil {
-				return "", err
+				return nil, err
 			}
 			session_data := &Session{}
 			err = json.Unmarshal(session_znode.Data, session_data)
 			if err != nil {
-				return "", err
+				return nil, err
 			}
 			session_data.EphemeralNodes = append(session_data.EphemeralNodes, req.Znode.Path)
 			session_znode.Data, err = json.Marshal(session_data)
 			if err != nil {
-				return "", err
+				return nil, err
 			}
+			session_znode.Version++
+			// write session update
 			err = write_op(session_znode)
 			if err != nil {
-				return "", err
+				return nil, err
 			}
 		}
 
-		// write session update
-		name := filepath.Base(req.Znode.Path)
-		return name, write_op(&req.Znode)
+		return []string{req.Znode.Path}, write_op(&req.Znode)
 	case "setdata":
-		return "", write_op(&req.Znode)
+		return []string{req.Znode.Path}, write_op(&req.Znode)
 	case "delete":
-		return "", delete_op(&req.Znode)
+		return []string{req.Znode.Path}, delete_op(&req.Znode)
 	case "delete_session":
 		// delete all ephemeral nodes
 		session_znode, err := GetData(req.Znode.Path)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		session_data := &Session{}
 		err = json.Unmarshal(session_znode.Data, session_data)
 		if err != nil {
-			return "", &CriticalError{"Crictial Error! session znode data is invalid"}
+			return nil, &CriticalError{"Crictial Error! session znode data is invalid"}
 		}
+		var paths []string
 		for _, znodepath := range session_data.EphemeralNodes {
 			znode, err := GetData(znodepath)
 			if err != nil {
-				return "", err
+				return nil, err
 			}
 			err = delete_op(znode)
 			if err != nil {
-				return "", err
+				return nil, err
 			}
+			paths = append(paths, znodepath)
 		}
 
-		return "", delete_op(&req.Znode)
+		return paths, delete_op(&req.Znode)
 	default:
-		return "", &InvalidRequestError{"Invalid request: " + req.Request}
+		return nil, &InvalidRequestError{"Invalid request: " + req.Request}
 	}
 }
 

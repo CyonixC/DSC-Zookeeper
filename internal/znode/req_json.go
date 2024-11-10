@@ -15,6 +15,7 @@ type write_request struct {
 
 //TODO safety to prevent clients from interacting with session znodes directly
 
+// Encode_create creates a request to create a znode
 func Encode_create(path string, data []byte, ephemeral bool, sequential bool, sessionid string) ([]byte, error) {
 	ephemeral_data := ""
 	if ephemeral {
@@ -39,6 +40,7 @@ func Encode_create(path string, data []byte, ephemeral bool, sequential bool, se
 	return data, nil
 }
 
+// Encode_create creates a request to delete a znode
 func Encode_delete(path string, version int) ([]byte, error) {
 	znode := &ZNode{
 		Path:    path,
@@ -55,6 +57,7 @@ func Encode_delete(path string, version int) ([]byte, error) {
 	return data, nil
 }
 
+// Encode_create creates a request to update a znode
 func Encode_setdata(path string, data []byte, version int) ([]byte, error) {
 	znode := &ZNode{
 		Path:    path,
