@@ -10,35 +10,124 @@ import (
     "local/zookeeper/internal/znode"
 )
 ```
-Refer to znodetest/main.go for example usage
+Refer to znodetest/main.go for example usage of logic flow for each client api call.
 
-## Available Functions
 
-`Check()` checks validity of write request. 
-This checks for conditions such as valid paths etc and is meant for the leader server node to check create, setdata and delete requests. 
-Takes in []Byte and deserialises into write request format described below.
+## Initialisation
+
+*For leader server ONLY*
+Use `Init_znode_cache()` to initialise the in-memory cache of znode.
+This cache is used for checking validity of requests by the leader
+Will automatically populate the cache with znodes from local storage, otherwise init directory struct for fresh system.
+The cache is protected in a struct to prevent any accidents, can only be interacted with by other functions in this package 
+`Print_cache()` is also available for debugging purposes (only for ZNodeCache)
 
 ```go
-var req []byte
-var check bool
+var znodecache ZNodeCache
 var err error
-check, err := znode.Check(req)
+znodecache, err := znode.Init_znode_cache()
+znode.Print_cache(znodecache)
+```
+
+Use `Init_watch_cache()` to create a local cache to track watch flags.
+Each server only caches flags for the sessions they handle.
+But session watch info is propogated through a write request (refer to Handling Watch Flags below)
+This cache is also similarly protected
+
+```go
+var watchcache WatchCache
+var err error
+watchcache, err := znode.Init_watch_cache()
+```
+
+*When establishing an existing session*
+`Update_watch_cache()` is used to populate the watch_cache from local storage.
+This is meant for when a client with an existing session establishes a new connection with the server.
+Will only add the watchflags for the specified sessions.
+
+```go
+var watchcache WatchCache
+var sessionid string
+var err error
+err := znode.Update_watch_cache(watchcache, sessionid)
+```
+
+## Encoding Write Requests
+
+This package provides functions corresponding the write requests in the client API.
+These functions packages the request as []byte to be sent by the Proposal package.
+
+`Encode_create()` corresponds to the create() client API
+```go
+var path string
+var data []byte
+var ephemeral bool
+var sequential bool
+var sessionid string
+var request []byte
+var err error
+request, err := znode.Encode_create(path, data, ephemeral, sequential, sessionid)
+```
+
+`Encode_delete()` corresponds to the delete() client API
+```go
+var path string
+var version int
+var request []byte
+var err error
+request, err := znode.Encode_delete(path, version)
+```
+
+`Encode_setdata()` corresponds to the setData() client API
+```go
+var path string
+var data []byte
+var version int
+var request []byte
+var err error
+request, err := znode.Encode_setdata(path, data, version)
+```
+
+
+## Processing Write Requests
+
+These functions take in write requests encoded by the above functions.
+
+*For leader server ONLY*
+`Check()` checks validity of write request. 
+This checks for conditions such as valid paths etc and is meant for the leader server node to check create, setdata and delete requests. 
+Checks against in-memory ZNodeCache, NOT local storage
+Will update the cache and the request (i.e. filename for seq flag/version), but will not write yet
+Returns the updated request to be broadcasted to all servers
+
+```go
+var znodecache ZNodeCache
+var request []byte
+var updated_request []byte
+var err error
+updated_request, err := znode.Check(znodecache, request)
 ```
 
 `Write()` writes a znode to local storage. 
 This is meant for servers to call upon receiving commit message from leader. 
-Returns name for create request, empty string otherwise.
-Takes in []Byte and deserialises into write request format described below. 
+Returns array of paths of all modified znodes, meant to be used to check watch flags using `Check_watch()`, refer to Handling Watch Flags below
+This array will have only 1 path for the standard create, setdata and delete, the exception being delete_session (i.e.deleting multiple ephermeral notes)
+Use filepath.Base to get name for create to return to client
 
 ```go
 var req []byte
-var name string
+var paths []string
 var err error
-name, err := znode.Write(req)
+paths, err := znode.Write(req)
 ```
 
-`Exists()` checks if a znode exists locally.
-Corresponds to client api call of the same name
+## Handling Read Requests
+
+This package provides functions corresponding the read requests in the client API.
+These functions read data from local storage.
+These functions do NOT handle the watch flag, refer to below.
+
+`Exists()` corresponds to the exists() client API
 
 ```go
 var path string
@@ -46,9 +135,8 @@ var exists bool
 exists = Exists(path)
 ```
 
-`GetData()` retrieves a znode from local storage.
+`GetData()` corresponds to the getData() client API
 Returns a ZNode struct, described below
-Corresponds to client api call of the same name
 
 ```go
 var path string
@@ -57,9 +145,8 @@ var err error
 znode, err = GetData(path)
 ```
 
-`GetChildren()` retrieves the children of a znode from local storage.
+`GetChildren()` corresponds to the getChildren() client API
 Will return an empty array if no children
-Corresponds to client api call of the same name
 
 ```go
 var path string
@@ -68,39 +155,93 @@ var err error
 children, err = GetChildren(path)
 ```
 
-## Message format
-The format of write requests meant to be passed to or received from proposals is as follows:
+
+## Handling Watch Flags
+
+Use `Encode_watch()` to handle any watch flags that come with read requests.
+It will update the watch cache and return a write request to be sent to the leader to propogate the watch flag.
+The watch flag if true generates a write request to add watch flag, false removes.
+By default when handling watch flags should be true, false is meants for use of this func by `Check_watch()` below
+
 ```go
-type write_request struct {
-	Request    string //"create", "setdata", "delete" only
-	Znode      ZNode
-	Ephemeral  bool
-	Sequential bool
-}
+var watchcache WatchCache
+var sessionid string
+var path string
+var watch bool
+var request []byte
+var err error
+request, err = Encode_watch(watchcache, sessionid, path, watch)
 ```
 
-To ease encoding of write request, `Encode_write_request()` is provided:
-*TO BE MODIFIED DEPENDING ON CLIENT API IMPLEMENTATION
+Use `Check_watch()` after commiting a write request with `Write()`.
+This checks the cache for all sessions watching the updated znode.
+It will return an array of session ids, these are all the sessions this server handles and will need to notify that there has been a change to the watched znode.
+It will also return an array of requests to send to the leader to propogate the updated session info (remove triggered watch flag), just send them sequentially.
+
+paths should be returned by `Write()`.
 ```go
-var request string 
-var path string
-var data []byte
-var version int
-var ephemeral bool
-var sequential bool
-req, err := znode.Encode_write_request(request, path, data, version, ephemeral, sequential)
+var watchcache WatchCache
+var paths []string
+var requests [][]byte
+var sessions []string
+var err error
+requests, sessions, err = Encode_watch(watchcache, paths)
 ```
+
+## Sessions
+
+Updating of session information(ephermeral/watch flags) is done by other functions above.
+The only things that need to be explicitly done is create a session znode upon establishing a new session,
+and deleting a session znode and all its ephermeral nodes upon closing session or timeout
+
+Use `Exists_session()` to check if a session znode already exists for the session.
+If it does, this means the client already has an ongoing session and somehow lost connection to its previous server.
+This means you will need to use `Update_watch_cache()` to add its watch flags to this server's watch cache
+
+```go
+var sessionid string
+var exists bool
+exists= Exists_session(sessionid)
+```
+
+`Encode_create_sessions()` creates a write request to be sent to the leader.
+This initialises the session znode and must be used to establish a new session.
+Before using this, check to ensure it is a new session or it will error.
+
+```go
+var sessionid string
+var request []byte
+var err error
+request, err= Encode_create_session(sessionid)
+```
+
+`Encode_delete_session()` creates a special write request that both deletes the session znode and all associated ephemeral nodes.
+
+```go
+var sessionid string
+var request []byte
+var err error
+request, err= Encode_delete_session(sessionid)
+```
+
 
 ## Znode format
 Znode struct used mostly internally in this package but also returned by `GetData()`
-*MAY BE MODIFIED DEPENDING ON FLAG IMPLEMENTATION
+`PrintZnode()` is available for debugging
+path structure: ./znodeDir/znodePath/znodename.json
+currently not storing watch flags otherwise will be returned together with `GetData()`
 
 ```go
 type ZNode struct {
-	Path    string 
-	Data    []byte
-	Version int
+	Path       string 
+	Data       []byte
+	Version    int
+	Ephemeral  string 
+	Sequential bool
+	Children   []string
 }
+var znode ZNode
+PrintZnode(znode)
 ```
 
 ## Custom Errors
@@ -111,3 +252,5 @@ The znode package provides custom errors to allow error handling using errors.As
 `VersionError`: When provided version does not match latest version locally, thrown during `Check()`
 
 `ExistsError`: When a znode exists when it should not (e.g. during create) or vice versa (e.g. reading/deleting/updating/missing parent)
+
+`CriticalError`: Only thrown when there is an error caused by a bug in this package, please inform Darren if encountered

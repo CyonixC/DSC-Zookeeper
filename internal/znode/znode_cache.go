@@ -80,7 +80,7 @@ func init_base_znode() (*ZNode, *ZNode, error) {
 func populate_cache_layer(znodecache *ZNodeCache, path string) error {
 	children, err := GetChildren(path)
 	if err != nil {
-		return err
+		return &CriticalError{"Critical error! Error populating cache layer: " + err.Error()}
 	}
 	// base case: No children
 	if len(children) == 0 {

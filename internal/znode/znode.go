@@ -10,12 +10,11 @@ import (
 )
 
 // currently store znodes in this project's directory
-// path structure: ./znodeDir/znodePath/versionNumber.txt
+// path structure: ./znodeDir/znodePath/znodename.json
 // meaning working directory for server must be directory containing znodeDir (prob root of project)
 // version number currently just be an integer, incremented on each write
 // this allows znodes to have children (and may help with fault tolerance later?)
 // also ensures children can only be created if parent znode exists
-// .txt used for ease of reading and debugging
 const znodeDir = "znodeDir"
 
 type ZNode struct {

@@ -16,6 +16,12 @@ type Session struct {
 	EphemeralNodes []string
 }
 
+// Exists_session checks if a session znode exists in storage.
+func Exists_session(sessionid string) bool {
+	sessionpath := filepath.Join(sessionDir, sessionid)
+	return existsZnode(sessionpath)
+}
+
 // Encode_create_session is a wrapper that calls Encode_create to create a session znode
 func Encode_create_session(sessionid string) ([]byte, error) {
 	sessionpath := filepath.Join(sessionDir, sessionid)
