@@ -19,29 +19,59 @@ func Write(data []byte) (string, error) {
 	switch req.Request {
 
 	case "create":
-		name := filepath.Base(req.Znode.Path)
-		//if seq, modify path to include seq number
-		if req.Sequential {
-			name, err = seqname(&req.Znode)
-			if err != nil {
-				return "", err
+		// update parent znode children
+		parentpath := filepath.Dir(req.Znode.Path)
+		// if is base of znodedir, ensure base znode exists in case of this being the first znode created
+		if parentpath == "." {
+			if !Exists(".") {
+				_, err := init_base_znode()
+				if err != nil {
+					return "", err
+				}
 			}
 		}
-		return name, write(&req.Znode)
+
+		parent_znode, err := GetData(parentpath)
+		if err != nil {
+			return "", err
+		}
+		parent_znode.Children = append(parent_znode.Children, filepath.Base(req.Znode.Path))
+		err = write_op(parent_znode)
+		if err != nil {
+			return "", err
+		}
+
+		name := filepath.Base(req.Znode.Path)
+		return name, write_op(&req.Znode)
 	case "setdata":
-		return "", write(&req.Znode)
+		return "", write_op(&req.Znode)
 	case "delete":
-		return "", delete(&req.Znode)
+		// update parent znode children
+		parentpath := filepath.Dir(req.Znode.Path)
+		parent_znode, err := GetData(parentpath)
+		if err != nil {
+			return "", err
+		}
+		for i, child := range parent_znode.Children {
+			if child == filepath.Base(req.Znode.Path) {
+				parent_znode.Children = append(parent_znode.Children[:i], parent_znode.Children[i+1:]...)
+				break
+			}
+		}
+		err = write_op(parent_znode)
+		if err != nil {
+			return "", err
+		}
+
+		return "", delete_op(&req.Znode)
 	default:
 		return "", &InvalidRequestError{"Invalid request: " + req.Request}
 	}
 }
 
-// write will create a new version of a znode in the filesystem, will create znode directory if is new znode.
-// Does not overwrite existing versions, will increment version number.
+// write_op will create/overwrite znode in storage, will create znode directory if is new znode.
 // Returns nil if successful.
-func write(znode *ZNode) error {
-	znode.Version++
+func write_op(znode *ZNode) error {
 	err := writeZNode(znode)
 	if err != nil {
 		return err
@@ -49,9 +79,9 @@ func write(znode *ZNode) error {
 	return nil
 }
 
-// delete deletes a znode in the filesystem and removes from cache.
-// currently if version matches, is a recursive delete, do we newed to check for children?
-func delete(znode *ZNode) error {
+// delete_op deletes a znode in the filesystem and removes from cache.
+// currently if version matches, is a recursive delete_op, do we newed to check for children?
+func delete_op(znode *ZNode) error {
 	err := deleteZnode(znode)
 	if err != nil {
 		return err

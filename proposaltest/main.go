@@ -3,22 +3,52 @@ package main
 import (
 	"bufio"
 	"fmt"
+	cxn "local/zookeeper/internal/LocalConnectionManager"
+	prp "local/zookeeper/internal/Proposals"
 	"local/zookeeper/internal/znode"
+	"log"
+	"net"
 	"os"
 	"strconv"
 	"strings"
 )
 
+var addresses = []string{"192.168.10.1", "192.168.10.2", "192.168.10.3", "192.168.10.4", "192.168.10.5"}
+
 func help() {
-	fmt.Println("Available commands: create, delete, set, exist, get, children, cache, help, exit")
+	fmt.Println("Available commands: create, delete, set, exist, get, children, help, exit")
+}
+
+func client(selfIP net.Addr) {
+	recv_channel := cxn.Init(selfIP)
+	failedSends := make(chan string)
+	go receiveMsg(recv_channel, failedSends, selfIP)
+	go func() {
+		for str := range failedSends {
+			log.Println(selfIP, "failed to send to", str)
+		}
+	}()
+	if selfIP.String() == "192.168.10.6" {
+		interactive(failedSends, selfIP)
+	}
+}
+
+func receiveMsg(recv_channel chan cxn.NetworkMessage, failedSends chan string, selfIP net.Addr) {
+	for msg := range recv_channel {
+		go prp.ProcessZabMessage(msg, failedSends, selfIP)
+	}
 }
 
 func main() {
-	cache, err := znode.Init_cache()
-	if err != nil {
-		fmt.Printf("Error initializing cache: %v\n", err)
-		return
+	for _, addr := range addresses {
+		netaddr, _ := net.ResolveIPAddr("ip", addr)
+		go client(netaddr)
 	}
+	netaddr, _ := net.ResolveIPAddr("ip", "192.168.10.6")
+	client(netaddr)
+}
+
+func interactive(failedSends chan string, ip net.Addr) {
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Println("Interactive Mode. Type 'help' for a list of commands.")
 	help()
@@ -44,28 +74,13 @@ func main() {
 			scanner.Scan()
 			sequential := strings.TrimSpace(scanner.Text()) == "y"
 
-			fmt.Print("Ephemeral? (y/n): ")
-			scanner.Scan()
-			ephemeral := strings.TrimSpace(scanner.Text()) == "y"
-
-			req, err := znode.Encode_write_request("create", path, data, 0, ephemeral, sequential)
+			req, err := znode.Encode_write_request("create", path, data, 0, false, sequential)
 			if err != nil {
 				fmt.Printf("Error encoding request: %v\n", err)
 				continue
 			}
 
-			updated_req, err := znode.Check(cache, req)
-			if err != nil {
-				fmt.Printf("Error checking request: %v\n", err)
-				continue
-			}
-
-			name, err := znode.Write(updated_req)
-			if err != nil {
-				fmt.Printf("Error writing znode: %v\n", err)
-			} else {
-				fmt.Printf("Znode created with name: %s\n", name)
-			}
+			prp.SendWriteRequest(req, failedSends, ip)
 
 		case "delete":
 			fmt.Print("Enter path: ")
@@ -86,18 +101,7 @@ func main() {
 				continue
 			}
 
-			updated_req, err := znode.Check(cache, req)
-			if err != nil {
-				fmt.Printf("Error checking request: %v\n", err)
-				continue
-			}
-
-			_, err = znode.Write(updated_req)
-			if err != nil {
-				fmt.Printf("Error deleting znode: %v\n", err)
-			} else {
-				fmt.Printf("Znode deleted\n")
-			}
+			prp.SendWriteRequest(req, failedSends, ip)
 
 		case "set":
 			fmt.Print("Enter path: ")
@@ -123,18 +127,7 @@ func main() {
 				continue
 			}
 
-			updated_req, err := znode.Check(cache, req)
-			if err != nil {
-				fmt.Printf("Error checking request: %v\n", err)
-				continue
-			}
-
-			_, err = znode.Write(updated_req)
-			if err != nil {
-				fmt.Printf("Error updating znode: %v\n", err)
-			} else {
-				fmt.Printf("Znode updated\n")
-			}
+			prp.SendWriteRequest(req, failedSends, ip)
 
 		case "exist":
 			fmt.Print("Enter path: ")
@@ -154,11 +147,12 @@ func main() {
 			scanner.Scan()
 			path := strings.TrimSpace(scanner.Text())
 
-			info, err := znode.GetData(path)
+			znode, err := znode.GetData(path)
 			if err != nil {
 				fmt.Printf("Error getting znode: %v\n", err)
 			} else {
-				znode.PrintZnode(info)
+				fmt.Printf("Data: %s\n", znode.Data)
+				fmt.Printf("Version: %d\n", znode.Version)
 			}
 
 		case "children":
@@ -172,10 +166,6 @@ func main() {
 			} else {
 				fmt.Printf("Children: %v\n", children)
 			}
-
-		case "cache":
-			fmt.Println("Cache contents:")
-			znode.Print_cache(cache)
 
 		case "help":
 			help()
