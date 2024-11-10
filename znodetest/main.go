@@ -11,7 +11,7 @@ import (
 )
 
 func help() {
-	fmt.Println("Available commands: create_session, delete_session, create, delete, set, exist, get, children, cache, help, exit")
+	fmt.Println("Available commands: create_session, delete_session, create, delete, set, exist, get, children, znodecache, watchcache, help, exit")
 }
 
 func main() {
@@ -365,9 +365,12 @@ func main() {
 				fmt.Printf("Children: %v\n", children)
 			}
 
-		case "cache":
-			fmt.Println("Cache contents:")
+		case "znodecache":
+			fmt.Println("znode Cache contents:")
 			znode.Print_cache(znodeCache)
+
+		case "watchcache":
+			fmt.Printf("Watch Cache: %v\n", watchCache)
 
 		case "help":
 			help()

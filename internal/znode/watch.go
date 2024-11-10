@@ -43,6 +43,7 @@ func Update_watch_cache(cache *WatchCache, sessionid string) error {
 
 // Encode_watch is a wrapper that calls Encode_setdata to update a session's watchlist
 // set watch to true to add watch flag, false to remove
+// will add session to watch cache if watch is true, but does nothing if false
 func Encode_watch(cache *WatchCache, sessionid string, path string, watch bool) ([]byte, error) {
 	//Get session znode locally and update its watchlist
 	sessionpath := filepath.Join(sessionDir, sessionid)
@@ -57,6 +58,8 @@ func Encode_watch(cache *WatchCache, sessionid string, path string, watch bool) 
 	}
 	if watch {
 		session_data.Watchlist = append(session_data.Watchlist, path)
+		//add session to watch cache
+		cache.cache[path] = append(cache.cache[path], sessionid)
 	} else {
 		for i, watchpath := range session_data.Watchlist {
 			if watchpath == path {
@@ -70,8 +73,7 @@ func Encode_watch(cache *WatchCache, sessionid string, path string, watch bool) 
 		return nil, err
 	}
 
-	//add to watch cache and propagate info
-	cache.cache[path] = append(cache.cache[path], sessionid)
+	//propagate info
 	return Encode_setdata(sessionpath, session_znode.Data, session_znode.Version)
 }
 
@@ -87,8 +89,6 @@ func Check_watch(cache *WatchCache, paths []string) ([][]byte, []string, error) 
 		//get all sessions watching this path
 		if len(cache.cache[path]) > 0 {
 			temp_sessions = append(temp_sessions, cache.cache[path]...)
-			//clear watchlist
-			delete(cache.cache, path)
 		}
 		//generate requests to update watchlist for each session
 		for _, sessionid := range temp_sessions {
@@ -99,6 +99,8 @@ func Check_watch(cache *WatchCache, paths []string) ([][]byte, []string, error) 
 			reqs = append(reqs, req)
 		}
 		sessions = append(sessions, temp_sessions...)
+		//clear path from watch cache
+		delete(cache.cache, path)
 	}
 	return reqs, sessions, nil
 }

@@ -171,6 +171,7 @@ func check_update(cache *ZNodeCache, znode *ZNode) error {
 		}
 	}
 
+	znode.Version++
 	//update cache znode, only update data and version, other fields should not be updated
 	cache.cache[znode.Path].Data = znode.Data
 	cache.cache[znode.Path].Version++
