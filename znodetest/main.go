@@ -3,63 +3,83 @@ package main
 import (
 	"bufio"
 	"fmt"
-	cxn "local/zookeeper/internal/LocalConnectionManager"
-	prp "local/zookeeper/internal/Proposals"
 	"local/zookeeper/internal/znode"
-	"log"
-	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-var addresses = []string{"192.168.10.1", "192.168.10.2", "192.168.10.3", "192.168.10.4", "192.168.10.5"}
-
 func help() {
-	fmt.Println("Available commands: create, delete, set, exist, get, children, help, exit")
-}
-
-func client(selfIP net.Addr) {
-	recv_channel := cxn.Init(selfIP)
-	failedSends := make(chan string)
-	go receiveMsg(recv_channel, failedSends, selfIP)
-	go func() {
-		for str := range failedSends {
-			log.Println(selfIP, "failed to send to", str)
-		}
-	}()
-	if selfIP.String() == "192.168.10.6" {
-		interactive(failedSends, selfIP)
-	}
-}
-
-func receiveMsg(recv_channel chan cxn.NetworkMessage, failedSends chan string, selfIP net.Addr) {
-	for msg := range recv_channel {
-		go prp.ProcessZabMessage(msg, failedSends, selfIP)
-	}
+	fmt.Println("Available commands: create_session, delete_session, create, delete, set, exist, get, children, znodecache, watchcache, help, exit")
 }
 
 func main() {
-	for _, addr := range addresses {
-		netaddr, _ := net.ResolveIPAddr("ip", addr)
-		go client(netaddr)
+	znodeCache, err := znode.Init_znode_cache()
+	watchCache := znode.Init_watch_cache()
+	if err != nil {
+		fmt.Printf("Error initializing cache: %v\n", err)
+		return
 	}
-	netaddr, _ := net.ResolveIPAddr("ip", "192.168.10.6")
-	client(netaddr)
-}
-
-func interactive(failedSends chan string, ip net.Addr) {
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Println("Interactive Mode. Type 'help' for a list of commands.")
 	help()
 
 	for {
+		fmt.Println()
 		fmt.Print("> ")
 		scanner.Scan() // Reads the input
 		command := strings.TrimSpace(scanner.Text())
 
 		switch command {
 
+		case "create_session":
+			fmt.Print("Enter session id: ")
+			scanner.Scan()
+			sessionid := strings.TrimSpace(scanner.Text())
+
+			req, err := znode.Encode_create_session(sessionid)
+			if err != nil {
+				fmt.Printf("Error encoding request: %v\n", err)
+				continue
+			}
+
+			updated_req, err := znode.Check(znodeCache, req)
+			if err != nil {
+				fmt.Printf("Error checking request: %v\n", err)
+				continue
+			}
+
+			_, err = znode.Write(updated_req)
+			if err != nil {
+				fmt.Printf("Error creating session: %v\n", err)
+			} else {
+				fmt.Printf("Session created with id: %s\n", sessionid)
+			}
+
+		case "delete_session":
+			fmt.Print("Enter session id: ")
+			scanner.Scan()
+			sessionid := strings.TrimSpace(scanner.Text())
+
+			req, err := znode.Encode_delete_session(sessionid)
+			if err != nil {
+				fmt.Printf("Error encoding request: %v\n", err)
+				continue
+			}
+
+			updated_req, err := znode.Check(znodeCache, req)
+			if err != nil {
+				fmt.Printf("Error checking request: %v\n", err)
+				continue
+			}
+
+			_, err = znode.Write(updated_req)
+			if err != nil {
+				fmt.Printf("Error deleting session: %v\n", err)
+			} else {
+				fmt.Printf("Session deleted with id: %s\n", sessionid)
+			}
 		case "create":
 			fmt.Print("Enter path: ")
 			scanner.Scan()
@@ -70,17 +90,52 @@ func interactive(failedSends chan string, ip net.Addr) {
 			input := strings.TrimSpace(scanner.Text())
 			data := []byte(input)
 
+			fmt.Print("Enter session id: ")
+			scanner.Scan()
+			sessionid := strings.TrimSpace(scanner.Text())
+
 			fmt.Print("Sequential? (y/n): ")
 			scanner.Scan()
 			sequential := strings.TrimSpace(scanner.Text()) == "y"
 
-			req, err := znode.Encode_write_request("create", path, data, 0, false, sequential)
+			fmt.Print("Ephemeral? (y/n): ")
+			scanner.Scan()
+			ephemeral := strings.TrimSpace(scanner.Text()) == "y"
+
+			req, err := znode.Encode_create(path, data, ephemeral, sequential, sessionid)
 			if err != nil {
 				fmt.Printf("Error encoding request: %v\n", err)
 				continue
 			}
 
-			prp.SendWriteRequest(req, failedSends, ip)
+			updated_req, err := znode.Check(znodeCache, req)
+			if err != nil {
+				fmt.Printf("Error checking request: %v\n", err)
+				continue
+			}
+
+			modified, err := znode.Write(updated_req)
+			if err != nil {
+				fmt.Printf("Error writing znode: %v\n", err)
+			} else {
+				fmt.Printf("Znode created with name: %s\n", filepath.Base(modified[0]))
+			}
+
+			reqs, watchers, err := znode.Check_watch(watchCache, modified)
+			if err != nil {
+				fmt.Printf("Error checking watchers: %v\n", err)
+				continue
+			}
+			fmt.Printf("Watchers: %v\n", watchers)
+			for _, req := range reqs {
+				//Skipping check step here, but by right should do
+				_, err = znode.Write(req)
+				if err != nil {
+					fmt.Printf("Error propogating watch flag: %v\n", err)
+				} else {
+					fmt.Printf("Watch flag propogated\n")
+				}
+			}
 
 		case "delete":
 			fmt.Print("Enter path: ")
@@ -95,13 +150,40 @@ func interactive(failedSends chan string, ip net.Addr) {
 				continue
 			}
 
-			req, err := znode.Encode_write_request("delete", path, nil, version, false, false)
+			req, err := znode.Encode_delete(path, version)
 			if err != nil {
 				fmt.Printf("Error encoding request: %v\n", err)
 				continue
 			}
 
-			prp.SendWriteRequest(req, failedSends, ip)
+			updated_req, err := znode.Check(znodeCache, req)
+			if err != nil {
+				fmt.Printf("Error checking request: %v\n", err)
+				continue
+			}
+
+			modified, err := znode.Write(updated_req)
+			if err != nil {
+				fmt.Printf("Error deleting znode: %v\n", err)
+			} else {
+				fmt.Printf("Znode deleted\n")
+			}
+
+			reqs, watchers, err := znode.Check_watch(watchCache, modified)
+			if err != nil {
+				fmt.Printf("Error checking watchers: %v\n", err)
+				continue
+			}
+			fmt.Printf("Watchers: %v\n", watchers)
+			for _, req := range reqs {
+				//Skipping check step here, but by right should do
+				_, err = znode.Write(req)
+				if err != nil {
+					fmt.Printf("Error propogating watch flag: %v\n", err)
+				} else {
+					fmt.Printf("Watch flag propogated\n")
+				}
+			}
 
 		case "set":
 			fmt.Print("Enter path: ")
@@ -121,20 +203,77 @@ func interactive(failedSends chan string, ip net.Addr) {
 				continue
 			}
 
-			req, err := znode.Encode_write_request("setdata", path, data, version, false, false)
+			req, err := znode.Encode_setdata(path, data, version)
 			if err != nil {
 				fmt.Printf("Error encoding request: %v\n", err)
 				continue
 			}
 
-			prp.SendWriteRequest(req, failedSends, ip)
+			updated_req, err := znode.Check(znodeCache, req)
+			if err != nil {
+				fmt.Printf("Error checking request: %v\n", err)
+				continue
+			}
+
+			modified, err := znode.Write(updated_req)
+			if err != nil {
+				fmt.Printf("Error updating znode: %v\n", err)
+			} else {
+				fmt.Printf("Znode updated\n")
+			}
+
+			reqs, watchers, err := znode.Check_watch(watchCache, modified)
+			if err != nil {
+				fmt.Printf("Error checking watchers: %v\n", err)
+				continue
+			}
+			fmt.Printf("Watchers: %v\n", watchers)
+			for _, req := range reqs {
+				//Skipping check step here, but by right should do
+				_, err = znode.Write(req)
+				if err != nil {
+					fmt.Printf("Error propogating watch flag: %v\n", err)
+				} else {
+					fmt.Printf("Watch flag propogated\n")
+				}
+			}
 
 		case "exist":
 			fmt.Print("Enter path: ")
 			scanner.Scan()
 			path := strings.TrimSpace(scanner.Text())
 
+			fmt.Print("Enter session id: ")
+			scanner.Scan()
+			sessionid := strings.TrimSpace(scanner.Text())
+
+			fmt.Print("Watch? (y/n): ")
+			scanner.Scan()
+			watch := strings.TrimSpace(scanner.Text()) == "y"
+
 			exists := znode.Exists(path)
+
+			if watch {
+				req, err := znode.Encode_watch(watchCache, sessionid, path, true)
+				if err != nil {
+					fmt.Printf("Error encoding request: %v\n", err)
+					continue
+				}
+				fmt.Println("Watch Cache updated")
+
+				updated_req, err := znode.Check(znodeCache, req)
+				if err != nil {
+					fmt.Printf("Error checking request: %v\n", err)
+					continue
+				}
+
+				_, err = znode.Write(updated_req)
+				if err != nil {
+					fmt.Printf("Error propogating watch flag: %v\n", err)
+				} else {
+					fmt.Printf("Watch flag propogated\n")
+				}
+			}
 
 			if exists {
 				fmt.Println("Znode exists.")
@@ -147,12 +286,41 @@ func interactive(failedSends chan string, ip net.Addr) {
 			scanner.Scan()
 			path := strings.TrimSpace(scanner.Text())
 
-			znode, err := znode.GetData(path)
+			fmt.Print("Enter session id: ")
+			scanner.Scan()
+			sessionid := strings.TrimSpace(scanner.Text())
+
+			fmt.Print("Watch? (y/n): ")
+			scanner.Scan()
+			watch := strings.TrimSpace(scanner.Text()) == "y"
+
+			info, err := znode.GetData(path)
 			if err != nil {
 				fmt.Printf("Error getting znode: %v\n", err)
 			} else {
-				fmt.Printf("Data: %s\n", znode.Data)
-				fmt.Printf("Version: %d\n", znode.Version)
+				// only apply watch flag if znode exists
+				if watch {
+					req, err := znode.Encode_watch(watchCache, sessionid, path, true)
+					if err != nil {
+						fmt.Printf("Error encoding request: %v\n", err)
+						continue
+					}
+					fmt.Println("Watch Cache updated")
+
+					updated_req, err := znode.Check(znodeCache, req)
+					if err != nil {
+						fmt.Printf("Error checking request: %v\n", err)
+						continue
+					}
+
+					_, err = znode.Write(updated_req)
+					if err != nil {
+						fmt.Printf("Error propogating watch flag: %v\n", err)
+					} else {
+						fmt.Printf("Watch flag propogated\n")
+					}
+				}
+				znode.PrintZnode(info)
 			}
 
 		case "children":
@@ -160,12 +328,49 @@ func interactive(failedSends chan string, ip net.Addr) {
 			scanner.Scan()
 			path := strings.TrimSpace(scanner.Text())
 
+			fmt.Print("Enter session id: ")
+			scanner.Scan()
+			sessionid := strings.TrimSpace(scanner.Text())
+
+			fmt.Print("Watch? (y/n): ")
+			scanner.Scan()
+			watch := strings.TrimSpace(scanner.Text()) == "y"
+
 			children, err := znode.GetChildren(path)
 			if err != nil {
 				fmt.Printf("Error getting children: %v\n", err)
 			} else {
+				// only apply watch flag if znode exists
+				if watch {
+					req, err := znode.Encode_watch(watchCache, sessionid, path, true)
+					if err != nil {
+						fmt.Printf("Error encoding request: %v\n", err)
+						continue
+					}
+					fmt.Println("Watch Cache updated")
+
+					updated_req, err := znode.Check(znodeCache, req)
+					if err != nil {
+						fmt.Printf("Error checking request: %v\n", err)
+						continue
+					}
+
+					_, err = znode.Write(updated_req)
+					if err != nil {
+						fmt.Printf("Error propogating watch flag: %v\n", err)
+					} else {
+						fmt.Printf("Watch flag propogated\n")
+					}
+				}
 				fmt.Printf("Children: %v\n", children)
 			}
+
+		case "znodecache":
+			fmt.Println("znode Cache contents:")
+			znode.Print_cache(znodeCache)
+
+		case "watchcache":
+			fmt.Printf("Watch Cache: %v\n", watchCache)
 
 		case "help":
 			help()

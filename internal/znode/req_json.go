@@ -1,31 +1,72 @@
 package znode
 
+//this file defines the json struct for write requests
+//it provides functions to encode the different write requests
+
 import (
 	"encoding/json"
 )
 
 // standard json struct for write requests such as create, update, delete
 type write_request struct {
-	Request    string //create, update, delete
-	Znode      ZNode
-	Ephemeral  bool
-	Sequential bool
+	Request string //create, update, delete
+	Znode   ZNode
 }
 
-// Encode_write_request reformats info from client api to json as []byte for proposal
-func Encode_write_request(request string, path string, data []byte, version int, ephemeral bool, sequential bool) ([]byte, error) {
-	//TODO modify according to client api later with only req and []byte, unpack data according to request and set default values
-	//i.e. no version for create, no flags for write and delete
+//TODO safety to prevent clients from interacting with session znodes directly
+
+// Encode_create creates a request to create a znode
+func Encode_create(path string, data []byte, ephemeral bool, sequential bool, sessionid string) ([]byte, error) {
+	ephemeral_data := ""
+	if ephemeral {
+		ephemeral_data = sessionid
+	}
+
+	znode := &ZNode{
+		Path:       path,
+		Data:       data,
+		Version:    0,
+		Ephemeral:  ephemeral_data,
+		Sequential: sequential,
+	}
+	req := &write_request{
+		Request: "create",
+		Znode:   *znode,
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// Encode_create creates a request to delete a znode
+func Encode_delete(path string, version int) ([]byte, error) {
+	znode := &ZNode{
+		Path:    path,
+		Version: version,
+	}
+	req := &write_request{
+		Request: "delete",
+		Znode:   *znode,
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// Encode_create creates a request to update a znode
+func Encode_setdata(path string, data []byte, version int) ([]byte, error) {
 	znode := &ZNode{
 		Path:    path,
 		Data:    data,
 		Version: version,
 	}
 	req := &write_request{
-		Request:    request,
-		Znode:      *znode,
-		Ephemeral:  ephemeral,
-		Sequential: sequential,
+		Request: "setdata",
+		Znode:   *znode,
 	}
 	data, err := json.Marshal(req)
 	if err != nil {
