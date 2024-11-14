@@ -11,7 +11,7 @@ import (
 )
 
 func help() {
-	fmt.Println("Available commands: create_session, delete_session, create, delete, set, exist, get, children, znodecache, watchcache, help, exit")
+	fmt.Println("Available commands: create_session, delete_session, create, delete, set, exist, get, children, znode, watch, update_watch, help, exit")
 }
 
 func main() {
@@ -369,13 +369,25 @@ func main() {
 				fmt.Printf("Children: %v\n", children)
 			}
 
-		case "znodecache":
+		case "znode":
 			fmt.Println("znode Cache contents:")
 			znode.Print_znode_cache()
 
-		case "watchcache":
+		case "watch":
 			fmt.Println("watch Cache contents:")
 			znode.Print_watch_cache()
+
+		case "update_watch":
+			fmt.Print("Enter session id: ")
+			scanner.Scan()
+			sessionid := strings.TrimSpace(scanner.Text())
+
+			err := znode.Update_watch_cache(sessionid)
+			if err != nil {
+				fmt.Printf("Error updating watch cache: %v\n", err)
+			} else {
+				fmt.Println("Watch cache updated")
+			}
 
 		case "help":
 			help()

@@ -10,19 +10,15 @@ import (
 //TODO implement safety to prevent session znodes from being added to watchlist
 //TODO implement safety to ensure watchcache was initialised before use
 
-type WatchCache struct {
-	//map of znode paths to sessions watching them
-	//watch flags are used to signal to clients that a znode has been modified
-	//watch flags are cleared after being read
-	cache map[string][]string
-}
-
-var watchcache *WatchCache
+// map of znode paths to sessions watching them
+// watch flags are used to signal to clients that a znode has been modified
+// watch flags are cleared after being read
+var watchcache map[string][]string
 
 // Creates an empty watch cache
 // Use Update_watch_cache to populate the cache
 func Init_watch_cache() {
-	watchcache = &WatchCache{make(map[string][]string)}
+	watchcache = make(map[string][]string)
 }
 
 // Update_watch_cache updates the watch cache with the watchlist of a session
@@ -39,7 +35,7 @@ func Update_watch_cache(sessionid string) error {
 		return &CriticalError{"Crictial Error! session znode data is invalid"}
 	}
 	for _, path := range session_data.Watchlist {
-		watchcache.cache[path] = append(watchcache.cache[path], sessionid)
+		watchcache[path] = append(watchcache[path], sessionid)
 	}
 	return nil
 }
@@ -62,7 +58,7 @@ func Encode_watch(sessionid string, path string, watch bool) ([]byte, error) {
 	if watch {
 		session_data.Watchlist = append(session_data.Watchlist, path)
 		//add session to watch cache
-		watchcache.cache[path] = append(watchcache.cache[path], sessionid)
+		watchcache[path] = append(watchcache[path], sessionid)
 	} else {
 		for i, watchpath := range session_data.Watchlist {
 			if watchpath == path {
@@ -91,8 +87,8 @@ func Check_watch(paths []string) ([][]byte, []string, error) {
 	for _, path := range paths {
 		var temp_sessions []string
 		//get all sessions watching this path
-		if len(watchcache.cache[path]) > 0 {
-			temp_sessions = append(temp_sessions, watchcache.cache[path]...)
+		if len(watchcache[path]) > 0 {
+			temp_sessions = append(temp_sessions, watchcache[path]...)
 		}
 		//generate requests to update watchlist for each session
 		for _, sessionid := range temp_sessions {
@@ -104,14 +100,14 @@ func Check_watch(paths []string) ([][]byte, []string, error) {
 		}
 		sessions = append(sessions, temp_sessions...)
 		//clear path from watch cache
-		delete(watchcache.cache, path)
+		delete(watchcache, path)
 	}
 	return reqs, sessions, nil
 }
 
 // Print_watch_cache prints the watch cache for debugging purposes
 func Print_watch_cache() {
-	for path, sessions := range watchcache.cache {
+	for path, sessions := range watchcache {
 		println("Path: ", path)
 		for _, session := range sessions {
 			println("Session: ", session)

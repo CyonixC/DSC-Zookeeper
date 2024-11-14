@@ -5,38 +5,33 @@ import (
 )
 
 // ZNodeCache is an in-memory cache for ZNodes
-// Field cache is only accessible by the package to avoid potential desyncs between cache and memory
 // Used only by leader for checks
-type ZNodeCache struct {
-	cache map[string]*ZNode
-}
-
-var znodecache *ZNodeCache
+var znodecache map[string]*ZNode
 
 // Init_znode_cache initializes the cache with all znodes in storage
 func Init_znode_cache() error {
-	znodecache = &ZNodeCache{cache: make(map[string]*ZNode)}
+	znodecache = make(map[string]*ZNode)
 	// ensure base znode exists in storage (for checking children)
 	if !existsZnode(".") {
 		base_znode, session_znode, err := init_base_znode()
 		if err != nil {
 			return err
 		}
-		znodecache.cache[base_znode.Path] = base_znode
+		znodecache[base_znode.Path] = base_znode
 		// manually add sessiondir to cache to avoid it being counted as a child of base znode
-		znodecache.cache[session_znode.Path] = session_znode
+		znodecache[session_znode.Path] = session_znode
 	} else {
 		// if base znode exists, add to cache
 		base_znode, err := GetData(".")
 		if err != nil {
 			return err
 		}
-		znodecache.cache[base_znode.Path] = base_znode
+		znodecache[base_znode.Path] = base_znode
 		session_znode, err := GetData(sessionDir)
 		if err != nil {
 			return err
 		}
-		znodecache.cache[session_znode.Path] = session_znode
+		znodecache[session_znode.Path] = session_znode
 	}
 
 	// populate cache with all children of znodeDir
@@ -96,7 +91,7 @@ func populate_cache_layer(path string) error {
 		if err != nil {
 			return err
 		}
-		znodecache.cache[childpath] = znode
+		znodecache[childpath] = znode
 		err = populate_cache_layer(childpath)
 		if err != nil {
 			return err
@@ -108,7 +103,7 @@ func populate_cache_layer(path string) error {
 // Print_znode_cache prints the contents of the cache
 // Used for debugging
 func Print_znode_cache() {
-	for _, znode := range znodecache.cache {
+	for _, znode := range znodecache {
 		PrintZnode(znode)
 	}
 }
