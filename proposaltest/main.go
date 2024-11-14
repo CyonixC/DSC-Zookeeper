@@ -74,7 +74,7 @@ func interactive(failedSends chan string, ip net.Addr) {
 			scanner.Scan()
 			sequential := strings.TrimSpace(scanner.Text()) == "y"
 
-			req, err := znode.Encode_write_request("create", path, data, 0, false, sequential)
+			req, err := znode.Encode_create(path, data, false, sequential, "1")
 			if err != nil {
 				fmt.Printf("Error encoding request: %v\n", err)
 				continue
@@ -95,7 +95,7 @@ func interactive(failedSends chan string, ip net.Addr) {
 				continue
 			}
 
-			req, err := znode.Encode_write_request("delete", path, nil, version, false, false)
+			req, err := znode.Encode_delete(path, version)
 			if err != nil {
 				fmt.Printf("Error encoding request: %v\n", err)
 				continue
@@ -121,7 +121,7 @@ func interactive(failedSends chan string, ip net.Addr) {
 				continue
 			}
 
-			req, err := znode.Encode_write_request("setdata", path, data, version, false, false)
+			req, err := znode.Encode_setdata(path, data, version)
 			if err != nil {
 				fmt.Printf("Error encoding request: %v\n", err)
 				continue
