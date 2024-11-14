@@ -7,6 +7,7 @@ import (
 	connectionManager "local/zookeeper/internal/ConnectionManager"
 	"local/zookeeper/internal/logger"
 	"log"
+	"log/slog"
 	"os"
 	"time"
 )
@@ -17,15 +18,22 @@ type Config struct {
 }
 
 func main() {
+	handler := logger.NewPlainTextHandler(slog.LevelDebug)
+	logger.InitLogger(slog.New(handler))
+	recv := connectionManager.Init()
 	mode := os.Getenv("MODE") // "Server" or "Client"
 
 	if mode == "Server" {
-		server_name := os.Getenv("NAME")
-		startServer(server_name)
+		for msg := range recv {
+			logger.Info(fmt.Sprint("Message from ", msg.Remote, ": ", string(msg.Message)))
+		}
 	} else {
-		config := loadConfig("config.json")
-		client_name := os.Getenv("NAME")
-		startClient(client_name, config)
+		logger.Info("Client starting...")
+		for {
+			time.Sleep(time.Second * time.Duration(5))
+			data := []byte("hello world")
+			connectionManager.Broadcast(data)
+		}
 	}
 }
 
