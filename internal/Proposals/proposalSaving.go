@@ -20,10 +20,10 @@ type fixedProposal struct {
 	CountNum uint16
 }
 
+// Save proposal will just save the proposal data in sequential order, just a naive approach
+// Proposals in the same epoch will be saved to the same append-only file. The delimiter between proposals will be the 0x00 0xFE 0x00 byte sequence.
+// Future optimisation TODO: just pass around an open file handle instead?
 func SaveProposal(prop Proposal) error {
-	// Save proposal will just save the proposal data in sequential order, just a naive approach
-	// Proposals in the same epoch will be saved to the same append-only file. The delimiter between proposals will be the 0x00 0xFE 0x00 byte sequence.
-	// Future optimisation TODO: just pass around an open file handle instead?
 
 	propLogFolder := filepath.Join(".", proposalsLog)
 	os.MkdirAll(propLogFolder, 0755)
@@ -44,8 +44,8 @@ func SaveProposal(prop Proposal) error {
 	return nil
 }
 
+// Read the latest `readCount` proposals from the proposal log.
 func ReadProposals(epoch uint16, readCount int) ([]Proposal, error) {
-	// Read the latest `readCount` proposals from the proposal log.
 	propLogPath := filepath.Join(".", proposalsLog, strconv.FormatUint(uint64(epoch), 10))
 	file, err := os.OpenFile(propLogPath, os.O_RDONLY, 0644)
 	if err != nil {
@@ -110,8 +110,8 @@ func stepBackAndReadOne(file *os.File) (byte, int, error) {
 	return tempOne[0], int(currentPos), nil
 }
 
+// Converts a proposal to byte form
 func proposalToBytes(prop Proposal) ([]byte, error) {
-	// Converts a proposal to byte form
 	ret := new(bytes.Buffer)
 	if err := writeProposal(ret, &prop); err != nil {
 		return nil, fmt.Errorf("failed to convert proposal to bytes: %v", err)
@@ -143,8 +143,8 @@ func writeProposal(w io.Writer, p *Proposal) error {
 	return nil
 }
 
+// Given a byte array, reconstruct the original struct.
 func bytesToProposal(bArr []byte) (Proposal, error) {
-	// Given a byte array, reconstruct the original struct.
 	buf := bytes.NewReader(bArr)
 	var p Proposal
 	var f fixedProposal
