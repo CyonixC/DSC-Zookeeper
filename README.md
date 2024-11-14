@@ -17,7 +17,9 @@
 	- Should output corresponding signal in response to suspected node failure
 	- Should be able to handle sending the messages to the correct goroutines on receipt?
 2. Docker / Kubernetes setup (1 person?)
-	- Do up some documentation for the setup as well
+	- `docker buildx build -t my-go-app .` (Build the image)
+	- `docker-compose up -d` (Start the containers)
+	- `docker ps` (Check the containers)
 	
 # Future Work
 1. Leader activation (requires the proposals system)

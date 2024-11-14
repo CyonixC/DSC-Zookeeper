@@ -12,9 +12,14 @@ import (
 // Check if a write request is valid.
 // check error to see if request is valid, if not, will return error message
 // will return nil if request is invalid, otherwise will return updated request to broadcast
-func Check(cache *ZNodeCache, data []byte) ([]byte, error) {
+func Check(data []byte) ([]byte, error) {
+	err := check_znode_init()
+	if err != nil {
+		return nil, err
+	}
+
 	req := &write_request{}
-	err := json.Unmarshal(data, req)
+	err = json.Unmarshal(data, req)
 	if err != nil {
 		return nil, err
 	}
@@ -24,13 +29,13 @@ func Check(cache *ZNodeCache, data []byte) ([]byte, error) {
 	case "create":
 		//if seq, modify path to include seq number
 		if req.Znode.Sequential {
-			err = seqname(cache, &req.Znode)
+			err = seqname(&req.Znode)
 			if err != nil {
 				return nil, err
 			}
 		}
 
-		err = check_create(cache, &req.Znode)
+		err = check_create(&req.Znode)
 		if err != nil {
 			return nil, err
 		}
@@ -43,7 +48,7 @@ func Check(cache *ZNodeCache, data []byte) ([]byte, error) {
 
 		return updateddata, nil
 	case "setdata":
-		err = check_update(cache, &req.Znode)
+		err = check_update(&req.Znode)
 		if err != nil {
 			return nil, err
 		}
@@ -56,13 +61,13 @@ func Check(cache *ZNodeCache, data []byte) ([]byte, error) {
 
 		return updateddata, nil
 	case "delete":
-		err = check_delete(cache, &req.Znode)
+		err = check_delete(&req.Znode)
 		if err != nil {
 			return nil, err
 		}
 		return data, nil
 	case "delete_session":
-		err = check_delete_session(cache, &req.Znode)
+		err = check_delete_session(&req.Znode)
 		if err != nil {
 			return nil, err
 		}
@@ -74,11 +79,10 @@ func Check(cache *ZNodeCache, data []byte) ([]byte, error) {
 
 // seqname updates the znode path to include a sequence number
 // Meant to be used to create znodes with the sequential flag set.
-func seqname(cache *ZNodeCache, znode *ZNode) error {
-	//TODO implement
+func seqname(znode *ZNode) error {
 	parentpath := filepath.Dir(znode.Path)
 	filename := filepath.Base(znode.Path)
-	siblings := cache.cache[parentpath].Children
+	siblings := znodecache[parentpath].Children
 
 	maxseq := 0
 	for _, sibling := range siblings {
@@ -104,20 +108,20 @@ func seqname(cache *ZNodeCache, znode *ZNode) error {
 }
 
 // check_create checks for conditions that must be met before creating a znode
-func check_create(cache *ZNodeCache, znode *ZNode) error {
+func check_create(znode *ZNode) error {
 	//check if znode exists already in cache
-	if _, ok := cache.cache[znode.Path]; ok {
+	if _, ok := znodecache[znode.Path]; ok {
 		return &ExistsError{"znode already exists"}
 	}
 
 	//check if parent znode exists, if not, znode cannot be created
 	parentpath := filepath.Dir(znode.Path)
-	if _, ok := cache.cache[parentpath]; !ok {
+	if _, ok := znodecache[parentpath]; !ok {
 		return &ExistsError{"parent znode does not exist"}
 	}
 
 	//check if parent node is ephemeral
-	if cache.cache[parentpath].Ephemeral != "" {
+	if znodecache[parentpath].Ephemeral != "" {
 		return &InvalidRequestError{"parent znode is ephemeral"}
 	}
 
@@ -129,7 +133,7 @@ func check_create(cache *ZNodeCache, znode *ZNode) error {
 
 	//if ephemeral, check session znode exists
 	if znode.Ephemeral != "" {
-		session_znode, ok := cache.cache[filepath.Join(sessionDir, znode.Ephemeral)]
+		session_znode, ok := znodecache[filepath.Join(sessionDir, znode.Ephemeral)]
 		if !ok {
 			return &ExistsError{"session znode does not exist"}
 		}
@@ -150,46 +154,46 @@ func check_create(cache *ZNodeCache, znode *ZNode) error {
 
 	//add znode to cache upon successful check
 	znode.Version++ //write will increment version number too, but that should be fine as it is not taking in this znode instance but rather the one from the request
-	cache.cache[znode.Path] = znode
+	znodecache[znode.Path] = znode
 	//add znode to parent's children
-	cache.cache[parentpath].Children = append(cache.cache[parentpath].Children, filepath.Base(znode.Path))
+	znodecache[parentpath].Children = append(znodecache[parentpath].Children, filepath.Base(znode.Path))
 
 	return nil
 }
 
 // check_update checks for conditions that must be met before overwriting
-func check_update(cache *ZNodeCache, znode *ZNode) error {
+func check_update(znode *ZNode) error {
 	//check znode exists
-	if _, ok := cache.cache[znode.Path]; !ok {
+	if _, ok := znodecache[znode.Path]; !ok {
 		return &ExistsError{"znode already exists"}
 	}
 
 	//check version match if not -1
 	if znode.Version != -1 {
-		if znode.Version != cache.cache[znode.Path].Version {
+		if znode.Version != znodecache[znode.Path].Version {
 			return &VersionError{"version number does not match latest version"}
 		}
 	}
 
 	znode.Version++
 	//update cache znode, only update data and version, other fields should not be updated
-	cache.cache[znode.Path].Data = znode.Data
-	cache.cache[znode.Path].Version++
+	znodecache[znode.Path].Data = znode.Data
+	znodecache[znode.Path].Version++
 
 	return nil
 }
 
 // check_delete checks for conditions that must be met before deleting a znode
 // TODO does not check for children, deleting is currently recursive, all children will be deleted
-func check_delete(cache *ZNodeCache, znode *ZNode) error {
+func check_delete(znode *ZNode) error {
 	//check znode exists
-	if _, ok := cache.cache[znode.Path]; !ok {
+	if _, ok := znodecache[znode.Path]; !ok {
 		return &ExistsError{"znode does not exists"}
 	}
 
 	//check version match if not -1
 	if znode.Version != -1 {
-		if znode.Version != cache.cache[znode.Path].Version {
+		if znode.Version != znodecache[znode.Path].Version {
 			return &VersionError{"version number does not match latest version"}
 		}
 	}
@@ -197,22 +201,22 @@ func check_delete(cache *ZNodeCache, znode *ZNode) error {
 	//remove znode from parent's children
 	//TODO better way to do this?
 	parentpath := filepath.Dir(znode.Path)
-	children := cache.cache[parentpath].Children
+	children := znodecache[parentpath].Children
 	for i, child := range children {
 		if child == filepath.Base(znode.Path) {
 			children = append(children[:i], children[i+1:]...)
 			break
 		}
 	}
-	cache.cache[parentpath].Children = children
+	znodecache[parentpath].Children = children
 
 	//remove znode from cache
-	delete(cache.cache, znode.Path)
+	delete(znodecache, znode.Path)
 
 	return nil
 }
 
-func check_delete_session(cache *ZNodeCache, znode *ZNode) error {
+func check_delete_session(znode *ZNode) error {
 	//check session znode exists
 	session_znode, err := GetData(znode.Path)
 	if err != nil {
@@ -228,20 +232,20 @@ func check_delete_session(cache *ZNodeCache, znode *ZNode) error {
 	for _, path := range session_data.EphemeralNodes {
 		//remove znode from parent's children
 		parentpath := filepath.Dir(path)
-		children := cache.cache[parentpath].Children
+		children := znodecache[parentpath].Children
 		for i, child := range children {
 			if child == filepath.Base(path) {
 				children = append(children[:i], children[i+1:]...)
 				break
 			}
 		}
-		cache.cache[parentpath].Children = children
+		znodecache[parentpath].Children = children
 		//remove znode from cache
-		delete(cache.cache, path)
+		delete(znodecache, path)
 	}
 
 	//remove session znode from cache
-	delete(cache.cache, znode.Path)
+	delete(znodecache, znode.Path)
 
 	return nil
 }

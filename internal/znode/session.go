@@ -14,6 +14,7 @@ type Session struct {
 	Id             string
 	Watchlist      []string
 	EphemeralNodes []string
+	Timeout        int
 }
 
 // Exists_session checks if a session znode exists in storage.
@@ -23,10 +24,11 @@ func Exists_session(sessionid string) bool {
 }
 
 // Encode_create_session is a wrapper that calls Encode_create to create a session znode
-func Encode_create_session(sessionid string) ([]byte, error) {
+func Encode_create_session(sessionid string, timeout int) ([]byte, error) {
 	sessionpath := filepath.Join(sessionDir, sessionid)
 	session := &Session{
-		Id: sessionid,
+		Id:      sessionid,
+		Timeout: timeout,
 	}
 	sessiondata, err := json.Marshal(session)
 	if err != nil {
