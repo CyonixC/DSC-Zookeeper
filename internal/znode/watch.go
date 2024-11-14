@@ -8,6 +8,7 @@ import (
 )
 
 //TODO implement safety to prevent session znodes from being added to watchlist
+//TODO implement safety to ensure watchcache was initialised before use
 
 type WatchCache struct {
 	//map of znode paths to sessions watching them
@@ -16,15 +17,17 @@ type WatchCache struct {
 	cache map[string][]string
 }
 
+var watchcache *WatchCache
+
 // Creates an empty watch cache
 // Use Update_watch_cache to populate the cache
-func Init_watch_cache() *WatchCache {
-	return &WatchCache{cache: make(map[string][]string)}
+func Init_watch_cache() {
+	watchcache = &WatchCache{make(map[string][]string)}
 }
 
 // Update_watch_cache updates the watch cache with the watchlist of a session
 // Used either to init cache or when picking up an existing session
-func Update_watch_cache(cache *WatchCache, sessionid string) error {
+func Update_watch_cache(sessionid string) error {
 	sessionpath := filepath.Join(sessionDir, sessionid)
 	session_znode, err := GetData(sessionpath)
 	if err != nil {
@@ -36,7 +39,7 @@ func Update_watch_cache(cache *WatchCache, sessionid string) error {
 		return &CriticalError{"Crictial Error! session znode data is invalid"}
 	}
 	for _, path := range session_data.Watchlist {
-		cache.cache[path] = append(cache.cache[path], sessionid)
+		watchcache.cache[path] = append(watchcache.cache[path], sessionid)
 	}
 	return nil
 }
@@ -44,7 +47,7 @@ func Update_watch_cache(cache *WatchCache, sessionid string) error {
 // Encode_watch is a wrapper that calls Encode_setdata to update a session's watchlist
 // set watch to true to add watch flag, false to remove
 // will add session to watch cache if watch is true, but does nothing if false
-func Encode_watch(cache *WatchCache, sessionid string, path string, watch bool) ([]byte, error) {
+func Encode_watch(sessionid string, path string, watch bool) ([]byte, error) {
 	//Get session znode locally and update its watchlist
 	sessionpath := filepath.Join(sessionDir, sessionid)
 	session_znode, err := GetData(sessionpath)
@@ -59,7 +62,7 @@ func Encode_watch(cache *WatchCache, sessionid string, path string, watch bool) 
 	if watch {
 		session_data.Watchlist = append(session_data.Watchlist, path)
 		//add session to watch cache
-		cache.cache[path] = append(cache.cache[path], sessionid)
+		watchcache.cache[path] = append(watchcache.cache[path], sessionid)
 	} else {
 		for i, watchpath := range session_data.Watchlist {
 			if watchpath == path {
@@ -81,18 +84,19 @@ func Encode_watch(cache *WatchCache, sessionid string, path string, watch bool) 
 // Returns requests to update watchlist for each session
 // Returns list of sessions that were watching the paths
 // Clears watchlist for each path
-func Check_watch(cache *WatchCache, paths []string) ([][]byte, []string, error) {
+// TODO figure out better system for storing watch info, avoid so many write requests
+func Check_watch(paths []string) ([][]byte, []string, error) {
 	var reqs [][]byte
 	var sessions []string
 	for _, path := range paths {
 		var temp_sessions []string
 		//get all sessions watching this path
-		if len(cache.cache[path]) > 0 {
-			temp_sessions = append(temp_sessions, cache.cache[path]...)
+		if len(watchcache.cache[path]) > 0 {
+			temp_sessions = append(temp_sessions, watchcache.cache[path]...)
 		}
 		//generate requests to update watchlist for each session
 		for _, sessionid := range temp_sessions {
-			req, err := Encode_watch(cache, sessionid, path, false)
+			req, err := Encode_watch(sessionid, path, false)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -100,7 +104,17 @@ func Check_watch(cache *WatchCache, paths []string) ([][]byte, []string, error) 
 		}
 		sessions = append(sessions, temp_sessions...)
 		//clear path from watch cache
-		delete(cache.cache, path)
+		delete(watchcache.cache, path)
 	}
 	return reqs, sessions, nil
+}
+
+// Print_watch_cache prints the watch cache for debugging purposes
+func Print_watch_cache() {
+	for path, sessions := range watchcache.cache {
+		println("Path: ", path)
+		for _, session := range sessions {
+			println("Session: ", session)
+		}
+	}
 }
