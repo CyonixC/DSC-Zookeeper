@@ -11,6 +11,14 @@ func (e *InvalidRequestError) Error() string {
 	return e.Msg
 }
 
+type InitError struct {
+	Msg string
+}
+
+func (e *InitError) Error() string {
+	return e.Msg
+}
+
 type ExistsError struct {
 	Msg string
 }

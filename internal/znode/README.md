@@ -19,25 +19,25 @@ Refer to znodetest/main.go for example usage of logic flow for each client api c
 Use `Init_znode_cache()` to initialise the in-memory cache of znode.
 This cache is used for checking validity of requests by the leader
 Will automatically populate the cache with znodes from local storage, otherwise init directory struct for fresh system.
-The cache is protected in a struct to prevent any accidents, can only be interacted with by other functions in this package 
-`Print_cache()` is also available for debugging purposes (only for ZNodeCache)
+Technically can be used to sync in-memory cache to local storage (re-init)
+`Print_znode_cache()` is also available for debugging purposes
 
 ```go
-var znodecache ZNodeCache
 var err error
-znodecache, err := znode.Init_znode_cache()
-znode.Print_cache(znodecache)
+err := znode.Init_znode_cache()
+znode.Print_znode_cache()
 ```
 
 Use `Init_watch_cache()` to create a local cache to track watch flags.
 Each server only caches flags for the sessions they handle.
 But session watch info is propogated through a write request (refer to Handling Watch Flags below)
-This cache is also similarly protected
+Technically can be used to reset watch cache. Use `Update_watch_cache()` to repopulate the cache.
+`Print_watch_cache()` is also available for debugging purposes
 
 ```go
-var watchcache WatchCache
 var err error
-watchcache, err := znode.Init_watch_cache()
+znode.Init_watch_cache()
+znode.Print_watch_cache
 ```
 
 *When establishing an existing session*
@@ -46,10 +46,9 @@ This is meant for when a client with an existing session establishes a new conne
 Will only add the watchflags for the specified sessions.
 
 ```go
-var watchcache WatchCache
 var sessionid string
 var err error
-err := znode.Update_watch_cache(watchcache, sessionid)
+err := znode.Update_watch_cache(sessionid)
 ```
 
 ## Encoding Write Requests
@@ -101,11 +100,10 @@ Will update the cache and the request (i.e. filename for seq flag/version), but 
 Returns the updated request to be broadcasted to all servers
 
 ```go
-var znodecache ZNodeCache
 var request []byte
 var updated_request []byte
 var err error
-updated_request, err := znode.Check(znodecache, request)
+updated_request, err := znode.Check(request)
 ```
 
 `Write()` writes a znode to local storage. 
@@ -164,13 +162,12 @@ The watch flag if true generates a write request to add watch flag, false remove
 By default when handling watch flags should be true, false is meants for use of this func by `Check_watch()` below
 
 ```go
-var watchcache WatchCache
 var sessionid string
 var path string
 var watch bool
 var request []byte
 var err error
-request, err = Encode_watch(watchcache, sessionid, path, watch)
+request, err = Encode_watch(sessionid, path, watch)
 ```
 
 Use `Check_watch()` after commiting a write request with `Write()`.
@@ -180,12 +177,11 @@ It will also return an array of requests to send to the leader to propogate the 
 
 paths should be returned by `Write()`.
 ```go
-var watchcache WatchCache
 var paths []string
 var requests [][]byte
 var sessions []string
 var err error
-requests, sessions, err = Encode_watch(watchcache, paths)
+requests, sessions, err = Encode_watch(paths)
 ```
 
 ## Sessions
@@ -210,9 +206,10 @@ Before using this, check to ensure it is a new session or it will error.
 
 ```go
 var sessionid string
+var timeout int
 var request []byte
 var err error
-request, err= Encode_create_session(sessionid)
+request, err= Encode_create_session(sessionid, timeout)
 ```
 
 `Encode_delete_session()` creates a special write request that both deletes the session znode and all associated ephemeral nodes.
@@ -246,11 +243,14 @@ PrintZnode(znode)
 
 ## Custom Errors
 The znode package provides custom errors to allow error handling using errors.As or type checking.
+Alternatively print(err.Error()) to observe detailed error message.
 
 `InvalidRequestError`: When write request has an invalid type, can be thrown by `Check()` and `Write()`
 
 `VersionError`: When provided version does not match latest version locally, thrown during `Check()`
 
 `ExistsError`: When a znode exists when it should not (e.g. during create) or vice versa (e.g. reading/deleting/updating/missing parent)
+
+`InitError`: When attempting to use znodecache or watchcache without initialising them. Only checks for at least 1 initialisation.
 
 `CriticalError`: Only thrown when there is an error caused by a bug in this package, please inform Darren if encountered

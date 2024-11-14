@@ -44,7 +44,6 @@ func writeZNode(znode *ZNode) error {
 	}
 
 	//create a file in the path
-	//TODO modify implementation such that will error if overwriting existing version (if we establish that should not happen)
 	path = filepath.Join(path, filepath.Base(path)+".json")
 	err = os.WriteFile(path, jsonData, 0644)
 	return err
