@@ -4,6 +4,7 @@ package proposals
 
 import (
 	"encoding/json"
+	"fmt"
 	cxn "local/zookeeper/internal/LocalConnectionManager"
 	"local/zookeeper/internal/logger"
 	"local/zookeeper/internal/znode"
@@ -24,7 +25,7 @@ var proposalsQueue SafeQueue[Proposal]
 var syncTrack SyncTracker
 
 // Process a received proposal
-func processProposal(prop Proposal, source net.Addr, failedSend chan string, selfIP net.Addr, originalMsg ZabMessage) {
+func processProposal(prop Proposal, source net.Addr, failedSend chan string, selfIP net.Addr, originalMsg ZabMessage, zcache *znode.ZNodeCache) {
 	if currentCoordinator.String() != source.String() {
 		// Proposal is not from the current coordinator; ignore it.
 		// TODO trigger an election
@@ -36,7 +37,7 @@ func processProposal(prop Proposal, source net.Addr, failedSend chan string, sel
 	case Commit:
 		processCommitProposal(selfIP)
 	case NewLeader:
-		processNewLeaderProposal(prop, source, failedSend, selfIP, originalMsg)
+		processNewLeaderProposal(prop, source, failedSend, selfIP, originalMsg, zcache)
 	default:
 		logger.Fatal("Received proposal with unknown type")
 	}
@@ -82,7 +83,7 @@ func processCommitProposal(selfIP net.Addr) {
 	processPropUpdate(prop.Content)
 }
 
-func processNewLeaderProposal(prop Proposal, source net.Addr, failedSend chan string, selfIP net.Addr, originalMsg ZabMessage) {
+func processNewLeaderProposal(prop Proposal, source net.Addr, failedSend chan string, selfIP net.Addr, originalMsg ZabMessage, zcache *znode.ZNodeCache) {
 	// Immediately commit all held proposals
 	for !proposalsQueue.isEmpty() {
 		poppedProposal, _ := proposalsQueue.dequeue()
@@ -107,7 +108,7 @@ func processNewLeaderProposal(prop Proposal, source net.Addr, failedSend chan st
 		Content: uint32ToBytes(currentZxid),
 	}
 
-	sendRequest(syncRequest, failedSend, selfIP)
+	sendRequest(syncRequest, failedSend, selfIP, zcache)
 }
 
 // Process a received ACK message in response to a proposal.
@@ -152,16 +153,14 @@ func processPropUpdate(writeData []byte) {
 // Process a received request.
 // If it is a WRITE request, propagate it to the non-coordinators as a new proposal.
 // If it is a SYNC request, read the sent ZXID and send all proposals from that ZXID onwards.
-func processRequest(req Request, failedSends chan string, selfIP net.Addr, remoteIP net.Addr) bool {
+// If the request check with the znode cache fails, send an error message or just return false if on the same machine.
+func processRequest(req Request, failedSends chan string, selfIP net.Addr, remoteIP net.Addr, zcache *znode.ZNodeCache) error {
 	switch req.ReqType {
 	case Write:
-		success, err := znode.Check(req.Content)
+		updatedReq, err := znode.Check(zcache, req.Content)
 		if err != nil {
-			log.Fatal("Error checking: ", err)
-		}
-		if !success {
 			if selfIP.String() == remoteIP.String() {
-				return false
+				return err
 			}
 			reqJson, _ := json.Marshal(req)
 			zabMsg := ZabMessage{
@@ -169,7 +168,7 @@ func processRequest(req Request, failedSends chan string, selfIP net.Addr, remot
 				Content: reqJson,
 			}
 			sendZabMessage(remoteIP, zabMsg, failedSends, selfIP)
-			return false
+			return err
 		}
 
 		epoch, count := zxidCounter.incCount()
@@ -179,14 +178,14 @@ func processRequest(req Request, failedSends chan string, selfIP net.Addr, remot
 			StateChange,
 			epoch,
 			count,
-			req.Content,
+			updatedReq,
 		}
 		proposalsQueue.enqueue(prop)
 		broadcastProposal(prop, selfIP, failedSends)
 	case Sync:
 		// TODO
 	}
-	return true
+	return nil
 }
 
 // Broadcast a request as a proposal.
@@ -233,20 +232,23 @@ func broadcastZabMessage(msg ZabMessage, selfIP net.Addr, failedSends chan strin
 }
 
 // Sends a new write request to a given machine.
-func SendWriteRequest(content []byte, failedSends chan string, selfIP net.Addr) {
+func SendWriteRequest(content []byte, failedSends chan string, selfIP net.Addr, zcache *znode.ZNodeCache) {
 	req := Request{
 		ReqType: Write,
 		Content: content,
 	}
-	sendRequest(req, failedSends, selfIP)
+	sendRequest(req, failedSends, selfIP, zcache)
 }
 
 // Send a Request to a machine.
 // If a machine attempts to send a request to its own IP address, the request is immediately
 // processed instead of being sent through the network.
-func sendRequest(req Request, failedSends chan string, selfIP net.Addr) {
+func sendRequest(req Request, failedSends chan string, selfIP net.Addr, zcache *znode.ZNodeCache) {
 	if currentCoordinator == selfIP {
-		processRequest(req, failedSends, selfIP, selfIP)
+		err := processRequest(req, failedSends, selfIP, selfIP, zcache)
+		if err != nil {
+			logger.Error(fmt.Sprint("Error processing request - ", err))
+		}
 		return
 	}
 
@@ -263,7 +265,7 @@ func sendRequest(req Request, failedSends chan string, selfIP net.Addr) {
 }
 
 // Process a Zab message received from the network.
-func ProcessZabMessage(netMsg cxn.NetworkMessage, failedSends chan string, selfIP net.Addr) {
+func ProcessZabMessage(netMsg cxn.NetworkMessage, failedSends chan string, selfIP net.Addr, zcache *znode.ZNodeCache) {
 	src := netMsg.Remote
 	msgSerial := netMsg.Message
 	var msg ZabMessage
@@ -273,11 +275,11 @@ func ProcessZabMessage(netMsg cxn.NetworkMessage, failedSends chan string, selfI
 	case Req:
 		var req Request
 		deserialise(msg.Content, &req)
-		processRequest(req, failedSends, selfIP, netMsg.Remote)
+		processRequest(req, failedSends, selfIP, netMsg.Remote, zcache)
 	case Prop:
 		var prop Proposal
 		deserialise(msg.Content, &prop)
-		processProposal(prop, src, failedSends, selfIP, msg)
+		processProposal(prop, src, failedSends, selfIP, msg, zcache)
 	case ACK:
 		var ack Proposal
 		deserialise(msg.Content, &ack)
