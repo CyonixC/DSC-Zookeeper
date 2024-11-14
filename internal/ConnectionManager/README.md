@@ -23,10 +23,16 @@ remoteAddr := "192.168.0.1"
 err := connectionManager.SendMessage(NetworkMessage{remoteAddr, msg})
 ```
 
-To broadcast a message, call the `Broadcast()` function:
+To broadcast a message, call the `Broadcast()` function. Note that this broadcasts to ALL KNOWN MACHINES! If you just want to broadcast to known servers, see ServerBroadcast below.
 ```go
 var msg []byte
 connectionManager.Broadcast(msg)
+```
+
+To broadcast to all known servers, use the `ServerBroadcast()` function. Currently, it just checks if the machine name contains "server" as the prefix.
+```go
+var msg []byte
+connectionManager.ServerBroadcast(msg)
 ```
 
 ## Message format

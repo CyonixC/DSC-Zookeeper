@@ -14,6 +14,7 @@ import (
 	"net"
 	"os"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -252,6 +253,7 @@ func SendMessage(toSend NetworkMessage) error {
 	return nil
 }
 
+// Broadcast to all known machines.
 func Broadcast(toSend []byte) {
 	logger.Debug("Broadcasting message...")
 	ipToConnectionWrite.RLock()
@@ -263,6 +265,22 @@ func Broadcast(toSend []byte) {
 				logger.Fatal(fmt.Sprint("Error in broadcast ", err))
 			}
 		}()
+	}
+}
+
+func ServerBroadcast(toSend []byte) {
+	logger.Debug("Broadcasting message to servers...")
+	ipToConnectionWrite.RLock()
+	defer ipToConnectionWrite.RUnlock()
+	for name := range ipToConnectionWrite.connMap {
+		if strings.HasPrefix(name, "server") {
+			go func() {
+				err := SendMessage(NetworkMessage{name, toSend})
+				if err != nil {
+					logger.Fatal(fmt.Sprint("Error in broadcast ", err))
+				}
+			}()
+		}
 	}
 }
 
