@@ -182,7 +182,7 @@ func connectToSystemServers(socketAddresses []net.Addr, newConnChan chan net.Con
 
 func attemptConnection(socketAddress net.Addr, successChan chan net.Conn) {
 	// Attempt to connect to the given TCP socket.
-	conn, err := net.Dial("tcp", socketAddress.String())
+	conn, err := net.Dial("tcp", socketAddress.String()+":8080")
 
 	// Channel may be closed; in that case, ignore the panic.
 	defer func() { recover() }()

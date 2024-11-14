@@ -44,9 +44,13 @@ func startClient(client_name string, config Config) {
 	for {
 		for _, server := range config.Servers {
 			data := []byte("hello world" + client_name)
-			remoteAddr := server + ":8080"
-			connectionManager.SendMessage(connectionManager.NetworkMessage{remoteAddr, data})
-			logger.Info(fmt.Sprint("Sent hello to ", remoteAddr))
+			remoteAddr := server
+			err := connectionManager.SendMessage(connectionManager.NetworkMessage{remoteAddr, data})
+			if err != nil {
+				logger.Info("Error: " + err.Error())
+			} else {
+				logger.Info(fmt.Sprint("Sent hello to ", remoteAddr))
+			}
 		}
 		time.Sleep(time.Second * 5)
 	}

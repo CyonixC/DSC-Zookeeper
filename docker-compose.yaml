@@ -26,23 +26,15 @@ services:
     environment:
       - MODE=Client
       - NAME=client1
+    ports:
+      - "8083:8080"
     volumes:
       - ./servers.json:/app/servers.json # Mount JSON config file
     networks:
       - app-network
     container_name: client1
 
-  client2:
-    image: my-go-app
-    environment:
-      - MODE=Client
-      - NAME=client2
-    volumes:
-      - ./servers.json:/app/servers.json # Mount JSON config file
-    networks:
-      - app-network
-    container_name: client2
-
 networks:
   app-network:
+    name: app-network
     driver: bridge
