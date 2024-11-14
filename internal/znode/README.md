@@ -19,6 +19,7 @@ Refer to znodetest/main.go for example usage of logic flow for each client api c
 Use `Init_znode_cache()` to initialise the in-memory cache of znode.
 This cache is used for checking validity of requests by the leader
 Will automatically populate the cache with znodes from local storage, otherwise init directory struct for fresh system.
+Technically can be used to sync in-memory cache to local storage (re-init)
 `Print_znode_cache()` is also available for debugging purposes
 
 ```go
@@ -30,6 +31,7 @@ znode.Print_znode_cache()
 Use `Init_watch_cache()` to create a local cache to track watch flags.
 Each server only caches flags for the sessions they handle.
 But session watch info is propogated through a write request (refer to Handling Watch Flags below)
+Technically can be used to reset watch cache. Use `Update_watch_cache()` to repopulate the cache.
 `Print_watch_cache()` is also available for debugging purposes
 
 ```go
@@ -240,11 +242,14 @@ PrintZnode(znode)
 
 ## Custom Errors
 The znode package provides custom errors to allow error handling using errors.As or type checking.
+Alternatively print(err.Error()) to observe detailed error message.
 
 `InvalidRequestError`: When write request has an invalid type, can be thrown by `Check()` and `Write()`
 
 `VersionError`: When provided version does not match latest version locally, thrown during `Check()`
 
 `ExistsError`: When a znode exists when it should not (e.g. during create) or vice versa (e.g. reading/deleting/updating/missing parent)
+
+`InitError`: When attempting to use znodecache or watchcache without initialising them. Only checks for at least 1 initialisation.
 
 `CriticalError`: Only thrown when there is an error caused by a bug in this package, please inform Darren if encountered

@@ -20,11 +20,11 @@ func main() {
 		fmt.Printf("Error initializing cache: %v\n", err)
 		return
 	}
-	znode.Init_watch_cache()
-	if err != nil {
-		fmt.Printf("Error initializing cache: %v\n", err)
-		return
-	}
+	// znode.Init_watch_cache()
+	// if err != nil {
+	// 	fmt.Printf("Error initializing cache: %v\n", err)
+	// 	return
+	// }
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Println("Interactive Mode. Type 'help' for a list of commands.")
 	help()

@@ -14,16 +14,22 @@ import (
 // watch flags are used to signal to clients that a znode has been modified
 // watch flags are cleared after being read
 var watchcache map[string][]string
+var watchinit bool = false
 
 // Creates an empty watch cache
 // Use Update_watch_cache to populate the cache
 func Init_watch_cache() {
 	watchcache = make(map[string][]string)
+	watchinit = true
 }
 
 // Update_watch_cache updates the watch cache with the watchlist of a session
 // Used either to init cache or when picking up an existing session
 func Update_watch_cache(sessionid string) error {
+	err := check_watch_init()
+	if err != nil {
+		return err
+	}
 	sessionpath := filepath.Join(sessionDir, sessionid)
 	session_znode, err := GetData(sessionpath)
 	if err != nil {
@@ -44,6 +50,10 @@ func Update_watch_cache(sessionid string) error {
 // set watch to true to add watch flag, false to remove
 // will add session to watch cache if watch is true, but does nothing if false
 func Encode_watch(sessionid string, path string, watch bool) ([]byte, error) {
+	err := check_watch_init()
+	if err != nil {
+		return nil, err
+	}
 	//Get session znode locally and update its watchlist
 	sessionpath := filepath.Join(sessionDir, sessionid)
 	session_znode, err := GetData(sessionpath)
@@ -82,6 +92,11 @@ func Encode_watch(sessionid string, path string, watch bool) ([]byte, error) {
 // Clears watchlist for each path
 // TODO figure out better system for storing watch info, avoid so many write requests
 func Check_watch(paths []string) ([][]byte, []string, error) {
+	err := check_watch_init()
+	if err != nil {
+		return nil, nil, err
+	}
+
 	var reqs [][]byte
 	var sessions []string
 	for _, path := range paths {
@@ -107,10 +122,23 @@ func Check_watch(paths []string) ([][]byte, []string, error) {
 
 // Print_watch_cache prints the watch cache for debugging purposes
 func Print_watch_cache() {
+	err := check_watch_init()
+	if err != nil {
+		println(err.Error())
+		return
+	}
+
 	for path, sessions := range watchcache {
 		println("Path: ", path)
 		for _, session := range sessions {
 			println("Session: ", session)
 		}
 	}
+}
+
+func check_watch_init() error {
+	if !watchinit {
+		return &InitError{"Watch cache not initialised"}
+	}
+	return nil
 }

@@ -13,8 +13,13 @@ import (
 // check error to see if request is valid, if not, will return error message
 // will return nil if request is invalid, otherwise will return updated request to broadcast
 func Check(data []byte) ([]byte, error) {
+	err := check_znode_init()
+	if err != nil {
+		return nil, err
+	}
+
 	req := &write_request{}
-	err := json.Unmarshal(data, req)
+	err = json.Unmarshal(data, req)
 	if err != nil {
 		return nil, err
 	}

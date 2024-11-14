@@ -7,6 +7,7 @@ import (
 // ZNodeCache is an in-memory cache for ZNodes
 // Used only by leader for checks
 var znodecache map[string]*ZNode
+var znodeinit bool = false
 
 // Init_znode_cache initializes the cache with all znodes in storage
 func Init_znode_cache() error {
@@ -44,6 +45,8 @@ func Init_znode_cache() error {
 	if err != nil {
 		return err
 	}
+
+	znodeinit = true
 
 	return nil
 }
@@ -103,7 +106,18 @@ func populate_cache_layer(path string) error {
 // Print_znode_cache prints the contents of the cache
 // Used for debugging
 func Print_znode_cache() {
+	err := check_znode_init()
+	if err != nil {
+		return
+	}
 	for _, znode := range znodecache {
 		PrintZnode(znode)
 	}
+}
+
+func check_znode_init() error {
+	if !znodeinit {
+		return &InitError{"ZNode cache not initialized"}
+	}
+	return nil
 }
