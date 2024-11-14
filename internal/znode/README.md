@@ -206,9 +206,10 @@ Before using this, check to ensure it is a new session or it will error.
 
 ```go
 var sessionid string
+var timeout int
 var request []byte
 var err error
-request, err= Encode_create_session(sessionid)
+request, err= Encode_create_session(sessionid, timeout)
 ```
 
 `Encode_delete_session()` creates a special write request that both deletes the session znode and all associated ephemeral nodes.

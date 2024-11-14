@@ -42,7 +42,15 @@ func main() {
 			scanner.Scan()
 			sessionid := strings.TrimSpace(scanner.Text())
 
-			req, err := znode.Encode_create_session(sessionid)
+			fmt.Print("Enter timeout: ")
+			scanner.Scan()
+			timeout, err := strconv.Atoi(strings.TrimSpace(scanner.Text()))
+			if err != nil {
+				fmt.Printf("invalid timeout: %v\n", err)
+				continue
+			}
+
+			req, err := znode.Encode_create_session(sessionid, timeout)
 			if err != nil {
 				fmt.Printf("Error encoding request: %v\n", err)
 				continue
