@@ -26,34 +26,46 @@ var ipToConnectionWrite = SafeConnectionMap{
 }
 var newReadChan chan net.Conn
 var newWriteChan chan NamedConnection
+var removeWriteChan chan NamedConnection
+var failedSendsChan chan string
 
 // Initialise all the things needed to maintain and track connections between nodes. This includes:
 // Set up a TCP listener on a specified port (portNum in config.go)
 // Repeatedly ping the known machines in the network until connections are established with all
-func Init() (receiveChannel chan NetworkMessage) {
+func Init() (receiveChannel chan NetworkMessage, failedSends chan string) {
 
 	// New read connections will arrive on this channel
-	newReadChan = make(chan net.Conn)
+	newReadChan = make(chan net.Conn, 10)
 
 	// Newly established write connections will be sent here
-	newWriteChan = make(chan NamedConnection)
+	newWriteChan = make(chan NamedConnection, 10)
 
 	// This channel is used to receive from external nodes
-	receiveChannel = make(chan NetworkMessage)
+	receiveChannel = make(chan NetworkMessage, 10)
+
+	// The ID of any machine which this node failed to send to is sent on this channel.
+	// This failure should be handled by external code.
+	failedSendsChan := make(chan string, 10)
+	failedSends = failedSendsChan
+
+	// Any failed connections are sent to this channel.
+	removeWriteChan = make(chan NamedConnection, 10)
 
 	// Initialise TCP listener
 	go startTCPListening(newReadChan)
 
-	// Initialise TCP pinger
-	serverNames := ip_list
+	// Start background goroutines
 	go readConnectionManager(receiveChannel, newReadChan)
 	go writeConnectionManager(newWriteChan)
+	go removeConnectionManager(failedSends)
+
+	serverNames := ip_list
 	connectToSystemServers(serverNames)
 	return
 }
 
+// Start listening on a TCP socket. The port number is in config.go.
 func startTCPListening(newConnChan chan net.Conn) (int, error) {
-	// Start listening on a TCP socket.
 
 	serverSocketAddr := fmt.Sprintf(":%d", portNum)
 	ln, err := net.Listen("tcp", serverSocketAddr)
@@ -72,6 +84,7 @@ func startTCPListening(newConnChan chan net.Conn) (int, error) {
 	}
 }
 
+// Start receiving data on the given connection. Any data is sent to recv_channel.
 func startReceiving(recv_channel chan NetworkMessage, connection net.Conn) {
 	defer connection.Close()
 	buffer := make([]byte, 1024)
@@ -98,6 +111,7 @@ func startReceiving(recv_channel chan NetworkMessage, connection net.Conn) {
 	}
 }
 
+// Unused
 func makeSocketAddrList() ([]net.Addr, error) {
 	var allAddresses []net.Addr
 	if slices.Contains(ip_list, "localhost") || slices.Contains(ip_list, "127.0.0.1") {
@@ -211,6 +225,10 @@ func SendMessage(toSend NetworkMessage) error {
 		_, err = sendConnection.Write(msg)
 		logger.Debug(fmt.Sprint("Sending message to ", remote, "..."))
 		if err != nil {
+			removeWriteChan <- NamedConnection{
+				Remote:     remote,
+				Connection: sendConnection,
+			}
 			return err
 		}
 	} else {
@@ -224,6 +242,7 @@ func SendMessage(toSend NetworkMessage) error {
 			_, err = newConnection.Connection.Write(msg)
 			logger.Debug(fmt.Sprint("Sending message to ", remote, "..."))
 			if err != nil {
+				removeWriteChan <- newConnection
 				return err
 			}
 		} else {
@@ -243,7 +262,7 @@ func Broadcast(toSend []byte) {
 		go func() {
 			err := SendMessage(NetworkMessage{addr, toSend})
 			if err != nil {
-				logger.Fatal(fmt.Sprint("Error in broadcast ", err))
+				logger.Error(fmt.Sprint("Error in broadcast ", err))
 			}
 		}()
 	}
@@ -258,43 +277,57 @@ func ServerBroadcast(toSend []byte) {
 			go func() {
 				err := SendMessage(NetworkMessage{name, toSend})
 				if err != nil {
-					logger.Fatal(fmt.Sprint("Error in broadcast ", err))
+					logger.Error(fmt.Sprint("Error in broadcast ", err))
 				}
 			}()
 		}
 	}
 }
 
+// Runs in the background to log new write connections. If a new one is established while there
+// already exists another connection to the same server, the old one is deleted and replaced with
+// the new one.
 func writeConnectionManager(newConnectionChan chan NamedConnection) {
 	for newConnection := range newConnectionChan {
-		// A new connection has come in. If we already have a connection to this node, close it.
-		_, ok := ipToConnectionWrite.load(newConnection.Remote)
+		// A new connection has come in. If we already have a connection to this node, close the old one and replace it.
+		conn, ok := ipToConnectionWrite.load(newConnection.Remote)
 		if ok {
-			logger.Debug(fmt.Sprint("Trying to establish a connection to ", newConnection.Remote, " when one already exists"))
-			// We already have an existing connection with this machine.
-			newConnection.Connection.Close()
+			logger.Info(fmt.Sprint("Connection to ", newConnection.Remote, " already exists; overwriting it"))
+			ipToConnectionWrite.store(newConnection.Remote, newConnection.Connection)
+			conn.Close()
 		} else {
 			// Store the new connection
-			logger.Debug(fmt.Sprint("Stored a new write connection to ", newConnection.Remote, ", ", newConnection.Connection.RemoteAddr()))
+			logger.Info(fmt.Sprint("Stored a new write connection to ", newConnection.Remote, ", ", newConnection.Connection.RemoteAddr()))
 			ipToConnectionWrite.store(newConnection.Remote, newConnection.Connection)
 		}
 	}
 }
 
 func readConnectionManager(receiveChannel chan NetworkMessage, newConnectionChan chan net.Conn) {
-	// Contains a mapping between network addresses and connections, and primarily manages the sending of messages.
 	for newConnection := range newConnectionChan {
-		// A new connection has come in. If we already have a connection to this node, close it.
-		_, ok := ipToConnectionRead.load(newConnection.RemoteAddr().String())
+		// A new connection has come in. If we already have a connection to this node, close the old one and replace it.
+		conn, ok := ipToConnectionRead.load(newConnection.RemoteAddr().String())
 		if ok {
 			logger.Debug(fmt.Sprint("Received an already established connection from ", newConnection.RemoteAddr().String()))
-			// We already have an existing connection with this machine.
-			newConnection.Close()
+			ipToConnectionWrite.store(newConnection.RemoteAddr().String(), newConnection)
+			conn.Close()
 		} else {
 			// Store the new connection and start receiving
 			go startReceiving(receiveChannel, newConnection)
 			logger.Debug(fmt.Sprint("Stored a new connection from ", newConnection.RemoteAddr().String()))
 			ipToConnectionRead.store(newConnection.RemoteAddr().String(), newConnection)
 		}
+	}
+}
+
+// Manages failed connections.
+// This removes the connection from the connection map then returns the ID of the failed remote on the external channel.
+// It also closes the connection to preserve resources.
+func removeConnectionManager(failedSendsExternal chan string) {
+	for namedConn := range removeWriteChan {
+		logger.Warn(fmt.Sprint("Failed connection to ", namedConn.Remote, " registered, closing it..."))
+		ipToConnectionWrite.remove(namedConn.Remote)
+		namedConn.Connection.Close()
+		failedSendsExternal <- namedConn.Remote
 	}
 }
