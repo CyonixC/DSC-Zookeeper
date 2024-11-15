@@ -24,14 +24,22 @@ func main() {
 	mode := os.Getenv("MODE") // "Server" or "Client"
 
 	if mode == "Server" {
-		for msg := range recv {
-			logger.Info(fmt.Sprint("Message from ", msg.Remote, ": ", string(msg.Message)))
+		go func() {
+			for msg := range recv {
+				logger.Info(fmt.Sprint("Message from ", msg.Remote, ": ", string(msg.Message)))
+			}
+		}()
+		logger.Info("Server starting...")
+		for {
+			time.Sleep(time.Second * time.Duration(3))
+			data := []byte("hello world 1")
+			connectionManager.ServerBroadcast(data)
 		}
 	} else {
 		logger.Info("Client starting...")
 		for {
 			time.Sleep(time.Second * time.Duration(5))
-			data := []byte("hello world")
+			data := []byte("hello world 2")
 			connectionManager.Broadcast(data)
 		}
 	}

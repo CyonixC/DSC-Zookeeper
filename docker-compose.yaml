@@ -1,6 +1,9 @@
 services:
   server1:
-    image: my-go-app
+    build: 
+      context: .
+      target: compile-stage
+    # image: my-go-app
     environment:
       - MODE=Server
       - NAME=server1
@@ -11,7 +14,10 @@ services:
     container_name: server1
 
   server2:
-    image: my-go-app
+    build:
+      context: .
+      target: compile-stage
+    # image: my-go-app
     environment:
       - MODE=Server
       - NAME=server2
@@ -22,7 +28,10 @@ services:
     container_name: server2
 
   client1:
-    image: my-go-app
+    build:
+      context: .
+      target: compile-stage
+    # image: my-go-app
     environment:
       - MODE=Client
       - NAME=client1
