@@ -7,6 +7,7 @@ import (
 	connectionManager "local/zookeeper/internal/ConnectionManager"
 	"local/zookeeper/internal/logger"
 	"log"
+	"log/slog"
 	"os"
 	"time"
 )
@@ -17,15 +18,30 @@ type Config struct {
 }
 
 func main() {
+	handler := logger.NewPlainTextHandler(slog.LevelDebug)
+	logger.InitLogger(slog.New(handler))
+	recv := connectionManager.Init()
 	mode := os.Getenv("MODE") // "Server" or "Client"
 
 	if mode == "Server" {
-		server_name := os.Getenv("NAME")
-		startServer(server_name)
+		go func() {
+			for msg := range recv {
+				logger.Info(fmt.Sprint("Message from ", msg.Remote, ": ", string(msg.Message)))
+			}
+		}()
+		logger.Info("Server starting...")
+		for {
+			time.Sleep(time.Second * time.Duration(3))
+			data := []byte("hello world 1")
+			connectionManager.ServerBroadcast(data)
+		}
 	} else {
-		config := loadConfig("config.json")
-		client_name := os.Getenv("NAME")
-		startClient(client_name, config)
+		logger.Info("Client starting...")
+		for {
+			time.Sleep(time.Second * time.Duration(5))
+			data := []byte("hello world 2")
+			connectionManager.Broadcast(data)
+		}
 	}
 }
 
@@ -44,9 +60,13 @@ func startClient(client_name string, config Config) {
 	for {
 		for _, server := range config.Servers {
 			data := []byte("hello world" + client_name)
-			remoteAddr := server + ":8080"
-			connectionManager.SendMessage(connectionManager.NetworkMessage{remoteAddr, data})
-			logger.Info(fmt.Sprint("Sent hello to ", remoteAddr))
+			remoteAddr := server
+			err := connectionManager.SendMessage(connectionManager.NetworkMessage{remoteAddr, data})
+			if err != nil {
+				logger.Info("Error: " + err.Error())
+			} else {
+				logger.Info(fmt.Sprint("Sent hello to ", remoteAddr))
+			}
 		}
 		time.Sleep(time.Second * 5)
 	}
