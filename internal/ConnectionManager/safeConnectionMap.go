@@ -26,12 +26,8 @@ func (smap *SafeConnectionMap) load(key string) (net.Conn, bool) {
 	return val, ok
 }
 
-func (smap *SafeConnectionMap) loadOrStore(key string, val net.Conn) (net.Conn, bool) {
-	oldval, ok := smap.load(key)
-	if !ok {
-		smap.store(key, val)
-		return val, false
-	} else {
-		return oldval, true
-	}
+func (smap *SafeConnectionMap) remove(key string) {
+	smap.Lock()
+	defer smap.Unlock()
+	delete(smap.connMap, key)
 }

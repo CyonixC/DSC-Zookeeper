@@ -18,9 +18,9 @@ type Config struct {
 }
 
 func main() {
-	handler := logger.NewPlainTextHandler(slog.LevelDebug)
+	handler := logger.NewPlainTextHandler(slog.LevelInfo)
 	logger.InitLogger(slog.New(handler))
-	recv := connectionManager.Init()
+	recv, _ := connectionManager.Init()
 	mode := os.Getenv("MODE") // "Server" or "Client"
 
 	if mode == "Server" {
@@ -42,33 +42,6 @@ func main() {
 			data := []byte("hello world 2")
 			connectionManager.Broadcast(data)
 		}
-	}
-}
-
-func startServer(server_name string) {
-	logger.Info(fmt.Sprint("Starting server ", server_name))
-	recv := connectionManager.Init()
-	for {
-		msg := <-recv
-		logger.Info(fmt.Sprint("Recv ", string(msg.Message), " from ", msg.Remote))
-		time.Sleep(time.Second)
-	}
-}
-
-func startClient(client_name string, config Config) {
-	logger.Info(fmt.Sprint("Starting server ", client_name))
-	for {
-		for _, server := range config.Servers {
-			data := []byte("hello world" + client_name)
-			remoteAddr := server
-			err := connectionManager.SendMessage(connectionManager.NetworkMessage{remoteAddr, data})
-			if err != nil {
-				logger.Info("Error: " + err.Error())
-			} else {
-				logger.Info(fmt.Sprint("Sent hello to ", remoteAddr))
-			}
-		}
-		time.Sleep(time.Second * 5)
 	}
 }
 
