@@ -122,25 +122,6 @@ func makeSocketAddrList() ([]net.Addr, error) {
 	return allAddresses, nil
 }
 
-func merge[T any](ins []chan T) chan T {
-
-	// Channel may be closed; in that case, ignore the panic.
-	defer func() { recover() }()
-
-	out := make(chan T)
-	output := func(in <-chan T) {
-		for msg := range in {
-			out <- msg
-		}
-	}
-
-	for _, in := range ins {
-		go output(in)
-	}
-
-	return out
-}
-
 // Attempt to establish connections to all known machines in the system.
 func connectToSystemServers(serverNames []string) {
 	// Successful connections will be sent here
