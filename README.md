@@ -4,15 +4,20 @@ This is a message broker based on Yahoo's Zookeeper distributed consensus system
 ## Docker usage
 To launch the Docker containers, `cd` into the root folder (the one containing `Dockerfile`), then run:
 ```sh
-docker-compose up --build
+docker compose -f <docker_compose_file_name> up --build
 ```
 
-To type commands or view outputs of one container, attach to it in a new terminal:
+To start a Bash terminal on a Docker container, run:
 ```sh
-docker attach client1
+docker exec -it <container-id> /bin/bash
 ```
 
-To change the file being compiled, change the target file in the Dockerfile Go build command.
+To attach your terminal to the process running in the Docker container, run:
+```sh
+docker attach <container-id>
+```
+
+To change the file being compiled, open the dockerfile and change the target file in the Go build command.
 ```dockerfile
 RUN CGO_ENABLED=0 GOOS=linux go build -o ./go-main ./dockertest/main.go
 ```

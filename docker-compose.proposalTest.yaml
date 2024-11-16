@@ -2,7 +2,7 @@ services:
   server1:
     build: 
       context: .
-      dockerfile: Dockerfile
+      dockerfile: proposalTest.Dockerfile
       target: compile-stage
     # image: my-go-app
     environment:
@@ -17,7 +17,7 @@ services:
   server2:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: proposalTest.Dockerfile
       target: compile-stage
     # image: my-go-app
     environment:
@@ -32,7 +32,7 @@ services:
   server3:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: proposalTest.Dockerfile
       target: compile-stage
     # image: my-go-app
     environment:
@@ -60,8 +60,6 @@ services:
     networks:
       - app-network
     container_name: client1
-    stdin_open: true   # Keep stdin open
-    tty: true          # Allocate a pseudo-TTY
 
 networks:
   app-network:
