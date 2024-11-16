@@ -21,7 +21,7 @@ func identity(m []byte) ([]byte, error) { return m, nil }
 
 func main() {
 	role := os.Getenv("MODE")
-	handler := logger.NewPlainTextHandler(slog.LevelDebug)
+	handler := logger.NewPlainTextHandler(slog.LevelInfo)
 	lg := slog.New(handler)
 	logger.InitLogger(lg)
 	recv_channel, failed := cxn.Init()
