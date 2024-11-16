@@ -65,7 +65,7 @@ func TestPropLogWriteRead3(t *testing.T) {
 	}
 }
 
-func TestPropLogOverRead(t *testing.T) {
+func TestPropLogOverread(t *testing.T) {
 	cont := []byte{0x45, 0xfe, 0xe6}
 	prop1 := Proposal{
 		PropType: StateChange,
