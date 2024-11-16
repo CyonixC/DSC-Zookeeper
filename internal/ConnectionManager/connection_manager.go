@@ -105,7 +105,7 @@ func startReceiving(recv_channel chan NetworkMessage, connection net.Conn) {
 		ret := NetworkMessage{}
 		err = json.Unmarshal(buffer[:n], &ret)
 		if err != nil {
-			logger.Fatal(fmt.Sprint("Could not convert received message to JSON: ", buffer))
+			logger.Fatal(fmt.Sprint("Could not convert received message to JSON: ", buffer[:n]))
 		}
 		go func() { recv_channel <- ret }()
 	}
@@ -185,10 +185,14 @@ func connectToSystemServers(serverNames []string) {
 func attemptConnection(serverName string, successChan chan NamedConnection) bool {
 	logger.Debug(fmt.Sprint("Attempting to connect to ", serverName))
 
-	conn, err := net.Dial("tcp", serverName+":8080")
+	conn, err := net.DialTimeout("tcp", serverName+":8080", 3*time.Second)
 
 	// Channel may be closed; in that case, ignore the panic.
-	defer func() { recover() }()
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Warn("Connection failed with a panic:", r)
+		}
+	}()
 
 	if err != nil {
 		// Failed to connect, return nil
@@ -199,10 +203,12 @@ func attemptConnection(serverName string, successChan chan NamedConnection) bool
 		logger.Debug(fmt.Sprint("Failed to connect to ", serverName))
 		return false
 	}
-	successChan <- NamedConnection{
-		Remote:     serverName,
-		Connection: conn,
-	}
+	go func() {
+		successChan <- NamedConnection{
+			Remote:     serverName,
+			Connection: conn,
+		}
+	}()
 	logger.Debug(fmt.Sprint("Successfully connected to ", serverName))
 	return true
 }
