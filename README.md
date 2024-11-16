@@ -4,13 +4,18 @@ This is a message broker based on Yahoo's Zookeeper distributed consensus system
 ## Docker usage
 To launch the Docker containers, `cd` into the root folder (the one containing `Dockerfile`), then run:
 ```sh
-docker-compose up --build
+docker-compose up --build -d
 ```
+
+Attach to the client/server container to view outputs, and type commands (for client):
+```sh
+docker attach client1
+```
+
 To change the file being compiled, change the target file in the Dockerfile Go build command.
 ```dockerfile
 RUN CGO_ENABLED=0 GOOS=linux go build -o ./go-main ./dockertest/main.go
 ```
-
 ## Folder structure
 The packages used for this project are located in the `/internal`. Following is a brief description of the packages; for more detailed information, refer to the README files in the corresponding directories.
 

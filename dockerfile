@@ -26,7 +26,7 @@ EXPOSE 8080
 COPY config.json ./
 
 FROM build-stage AS compile-stage
-RUN CGO_ENABLED=0 GOOS=linux go build -o ./go-main ./dockertest/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o ./go-main ./heartbeattest/main.go ./heartbeattest/client.go ./heartbeattest/server.go
 
 # Run
 CMD ["./go-main"]

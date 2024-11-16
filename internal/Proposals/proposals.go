@@ -122,7 +122,7 @@ func processRequest(req Request, failedSends chan string, selfIP net.Addr, remot
 		if err != nil {
 			log.Fatal("Error checking: ", err)
 		}
-		if !success {
+		if success == nil {
 			if selfIP.String() == remoteIP.String() {
 				return false
 			}

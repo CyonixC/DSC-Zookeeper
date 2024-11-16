@@ -42,6 +42,8 @@ services:
     networks:
       - app-network
     container_name: client1
+    stdin_open: true   # Keep stdin open
+    tty: true          # Allocate a pseudo-TTY
 
 networks:
   app-network:
