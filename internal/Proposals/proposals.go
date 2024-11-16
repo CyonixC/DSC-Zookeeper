@@ -23,16 +23,18 @@ var syncTrack SyncTracker
 var newProposalChan = make(chan Proposal, 10)
 var toCommitChan = make(chan []byte, 10)
 var toSendChan = make(chan ToSendMessage, 10)
+var failedRequestChan = make(chan Request)
 
 type checkFunction func([]byte) ([]byte, error)
 
 var requestChecker checkFunction
 
-func Init(check checkFunction) (committed chan []byte) {
+func Init(check checkFunction) (committed chan []byte, denied chan Request) {
 	go proposalWriter(newProposalChan)
 	go messageSender(toSendChan)
 	committed = toCommitChan
 	requestChecker = check
+	denied = failedRequestChan
 	return
 }
 
@@ -57,7 +59,13 @@ func ProcessZabMessage(netMsg cxn.NetworkMessage) {
 		deserialise(msg.Content, &ack)
 		processACK(ack)
 	case Err:
-		// TODO
+		logger.Debug("Received ERROR")
+		var originalReq Request
+		deserialise(msg.Content, &originalReq)
+		failedRequestChan <- originalReq
+
+	case SyncErr:
+		logger.Error(fmt.Sprint("Received SYNC ERROR! Check if current coordinator is correct: ", currentCoordinator))
 	}
 
 	// ACK section
@@ -70,10 +78,11 @@ func ProcessZabMessage(netMsg cxn.NetworkMessage) {
 }
 
 // Sends a new write request to a given machine.
-func SendWriteRequest(content []byte) {
+func SendWriteRequest(content []byte, requestNum int) {
 	req := Request{
-		ReqType: Write,
-		Content: content,
+		ReqType:   Write,
+		ReqNumber: requestNum,
+		Content:   content,
 	}
 	sendRequest(req)
 }
@@ -101,7 +110,9 @@ func processProposal(prop Proposal, source string, originalMsg ZabMessage) {
 func processStateChangeProposal(prop Proposal, source string, originalMsg ZabMessage) {
 	propZxid := getZXIDAsInt(prop.EpochNum, prop.CountNum)
 	logger.Info(fmt.Sprint("receives proposal with zxid", propZxid))
-	epoch, count := zxidCounter.incCount()
+	epoch := prop.EpochNum
+	count := prop.CountNum
+	zxidCounter.setVals(epoch, count)
 
 	// If we're currently syncing, automatically save and commit, and don't ACK.
 	syncing, zxidCap := syncTrack.readVals()
@@ -131,7 +142,7 @@ func processCommitProposal() {
 		logger.Fatal("Received COMMIT with no proposals in queue")
 	}
 	propZxid := getZXIDAsInt(prop.EpochNum, prop.CountNum)
-	logger.Debug(fmt.Sprint("Committing proposal with zxid", propZxid))
+	logger.Debug(fmt.Sprint("Committing proposal with zxid ", propZxid))
 	queueCommitProposal(prop)
 }
 
@@ -203,13 +214,22 @@ func processRequest(req Request, remoteID string) error {
 	case Write:
 		updatedReq, err := requestChecker(req.Content)
 		if err != nil {
+			logger.Error(fmt.Sprint("Error processing request ", err))
 			if name == remoteID {
 				return err
 			}
-			reqJson, _ := json.Marshal(req)
+			errReq := Request{
+				ReqType:   req.ReqType,
+				ReqNumber: req.ReqNumber,
+				Content:   updatedReq,
+			}
+			errJson, err := json.Marshal(errReq)
+			if err != nil {
+				logger.Fatal(fmt.Sprint("Error marshaling denied request ", err))
+			}
 			zabMsg := ZabMessage{
 				ZabType: Err,
-				Content: reqJson,
+				Content: errJson,
 			}
 			queueSend(zabMsg, false, remoteID)
 			return err
@@ -225,11 +245,89 @@ func processRequest(req Request, remoteID string) error {
 			updatedReq,
 		}
 		proposalsQueue.enqueue(prop)
+		logger.Debug(fmt.Sprint("Request processed successfully, broadcasting as Proposal #", zxid))
 		broadcastProposal(prop)
 	case Sync:
-		// TODO
+		// Don't check coodinator status, just send to make it simple
+		highestEpoch, highestCount := zxidCounter.check()
+		sentzxid := bytesToUint32(req.Content)
+		sentEpoch, count := decomposeZXID(sentzxid)
+
+		// Sent epoch shouldn't be more than the current one.
+		if sentEpoch > highestEpoch {
+			replySyncRequestError(req, remoteID)
+		}
+
+		// Need to send all proposals from the sync request number onwards.
+		// If the epoch number is less, need to send epoch by epoch.
+		go func() {
+			for epoch := sentEpoch; epoch < highestEpoch; epoch++ {
+				numProposals, err := getEpochHighestCount(epoch)
+				if err != nil {
+					logger.Error(fmt.Sprint("Failed to read proposals from proposal store ", err))
+					replySyncRequestError(req, remoteID)
+				}
+
+				numLackingProposals := int(numProposals) - int(count)
+
+				proposalsToSend, err := ReadProposals(epoch, int(numLackingProposals))
+				if err != nil {
+					logger.Error(fmt.Sprint("Failed to read proposals from proposal store ", err))
+					replySyncRequestError(req, remoteID)
+				}
+
+				for _, sendingProposal := range proposalsToSend {
+					proposalJson, err := json.Marshal(sendingProposal)
+					if err != nil {
+						logger.Error(fmt.Sprint("Failed to marshal proposal from store ", err))
+						replySyncRequestError(req, remoteID)
+					}
+					zabMsg := ZabMessage{
+						ZabType: Prop,
+						Content: proposalJson,
+					}
+					queueSend(zabMsg, false, remoteID)
+				}
+				count = 0
+			}
+
+			// Now at the current epoch.
+			numLackingProposals := int(highestCount) - int(count)
+
+			proposalsToSend, err := ReadProposals(highestEpoch, int(numLackingProposals))
+			if err != nil {
+				logger.Error(fmt.Sprint("Failed to read proposals from proposal store ", err))
+				replySyncRequestError(req, remoteID)
+			}
+
+			for _, sendingProposal := range proposalsToSend {
+				proposalJson, err := json.Marshal(sendingProposal)
+				if err != nil {
+					logger.Error(fmt.Sprint("Failed to marshal proposal from store ", err))
+					replySyncRequestError(req, remoteID)
+				}
+				zabMsg := ZabMessage{
+					ZabType: Prop,
+					Content: proposalJson,
+				}
+				queueSend(zabMsg, false, remoteID)
+			}
+		}()
 	}
 	return nil
+}
+
+func replySyncRequestError(req Request, remoteID string) {
+	reqErr, err := json.Marshal(req)
+	if err != nil {
+		logger.Error(fmt.Sprint("Failed to marshal failed request ", err))
+	}
+	zabMsg := ZabMessage{
+		ZabType: SyncErr,
+		Content: reqErr,
+	}
+	queueSend(zabMsg, false, remoteID)
+
 }
 
 // Broadcast a request as a proposal.

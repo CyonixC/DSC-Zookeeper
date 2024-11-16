@@ -20,6 +20,13 @@ func (cnt *ZXIDCounter) check() (epochNum uint16, countNum uint16) {
 	return
 }
 
+func (cnt *ZXIDCounter) setVals(epochNum uint16, countNum uint16) {
+	cnt.Lock()
+	defer cnt.Unlock()
+	cnt.epochNum = epochNum
+	cnt.countNum = countNum
+}
+
 // Increment the count (same coordinator, new proposal)
 func (cnt *ZXIDCounter) incCount() (epochNum uint16, countNum uint16) {
 	cnt.Lock()

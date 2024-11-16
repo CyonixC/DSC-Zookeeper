@@ -46,6 +46,9 @@ func SaveProposal(prop Proposal) error {
 
 // Read the latest `readCount` proposals from the proposal log.
 func ReadProposals(epoch uint16, readCount int) ([]Proposal, error) {
+	if readCount <= 0 {
+		return nil, nil
+	}
 	propLogPath := filepath.Join(".", proposalsLog, strconv.FormatUint(uint64(epoch), 10))
 	file, err := os.OpenFile(propLogPath, os.O_RDONLY, 0644)
 	if err != nil {
@@ -95,6 +98,15 @@ func ReadProposals(epoch uint16, readCount int) ([]Proposal, error) {
 
 	slices.Reverse(props)
 	return props, nil
+}
+
+func getEpochHighestCount(epochNum uint16) (uint16, error) {
+	props, err := ReadProposals(epochNum, 1)
+	if err != nil {
+		return 0, err
+	}
+	prop := props[0]
+	return prop.CountNum, nil
 }
 
 func stepBackAndReadOne(file *os.File) (byte, int, error) {

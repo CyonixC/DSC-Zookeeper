@@ -21,6 +21,7 @@ const (
 	Prop
 	ACK
 	Err
+	SyncErr
 )
 
 // Proposal type - message sent from coordinator to non-coordinators
@@ -54,8 +55,9 @@ func (pt ProposalType) ToStr() string {
 // Request type - message sent from a non-coordinator to the coordinator
 type RequestType int
 type Request struct {
-	ReqType RequestType
-	Content []byte
+	ReqType   RequestType
+	ReqNumber int
+	Content   []byte
 }
 
 const (
@@ -78,6 +80,13 @@ func deserialise[m Deserialisable](serialised []byte, msgPtr *m) {
 // Convert the epoch and count numbers to a single zxid
 func getZXIDAsInt(epoch uint16, count uint16) uint32 {
 	return (uint32(epoch) << 16) | uint32(count)
+}
+
+// Convert a single zxid to epoch and count
+func decomposeZXID(zxid uint32) (epoch uint16, count uint16) {
+	epoch = uint16(zxid >> 16)
+	count = uint16(zxid & 0xFFFF)
+	return
 }
 
 func bytesToUint32(bytes []byte) uint32 {
