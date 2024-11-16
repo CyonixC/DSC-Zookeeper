@@ -7,14 +7,13 @@ import (
 	"fmt"
 	cxn "local/zookeeper/internal/ConnectionManager"
 	"local/zookeeper/internal/logger"
-	"local/zookeeper/internal/znode"
 	"log"
 	"os"
 )
 
 var currentCoordinator string = "server1"
 
-const n_systems = 2
+const n_systems = 3
 
 var zxidCounter ZXIDCounter
 var ackCounter = AckCounter{ackTracker: make(map[uint32]int)}
@@ -22,13 +21,19 @@ var proposalsQueue SafeQueue[Proposal]
 var syncTrack SyncTracker
 
 var newProposalChan = make(chan Proposal, 10)
-var toCommitChan = make(chan Proposal, 10)
+var toCommitChan = make(chan []byte, 10)
 var toSendChan = make(chan ToSendMessage, 10)
 
-func Init() {
+type checkFunction func([]byte) ([]byte, error)
+
+var requestChecker checkFunction
+
+func Init(check checkFunction) (committed chan []byte) {
 	go proposalWriter(newProposalChan)
-	go proposalCommitter(toCommitChan)
 	go messageSender(toSendChan)
+	committed = toCommitChan
+	requestChecker = check
+	return
 }
 
 // Process a Zab message received from the network.
@@ -196,7 +201,7 @@ func processRequest(req Request, remoteID string) error {
 	name := os.Getenv("NAME")
 	switch req.ReqType {
 	case Write:
-		updatedReq, err := znode.Check(req.Content)
+		updatedReq, err := requestChecker(req.Content)
 		if err != nil {
 			if name == remoteID {
 				return err
@@ -289,7 +294,7 @@ func queueWriteProposal(prop Proposal) {
 }
 
 func queueCommitProposal(prop Proposal) {
-	toCommitChan <- prop
+	toCommitChan <- prop.Content
 }
 
 // Send a Zab message over the network.
