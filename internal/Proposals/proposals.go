@@ -100,7 +100,7 @@ func processProposal(prop Proposal, source string, originalMsg ZabMessage) {
 // Process a received StateChange proposal
 func processStateChangeProposal(prop Proposal, source string, originalMsg ZabMessage) {
 	propZxid := getZXIDAsInt(prop.EpochNum, prop.CountNum)
-	logger.Info("receives proposal with zxid", propZxid)
+	logger.Info(fmt.Sprint("receives proposal with zxid", propZxid))
 	epoch, count := zxidCounter.incCount()
 
 	// If we're currently syncing, automatically save and commit, and don't ACK.
@@ -131,7 +131,7 @@ func processCommitProposal() {
 		logger.Fatal("Received COMMIT with no proposals in queue")
 	}
 	propZxid := getZXIDAsInt(prop.EpochNum, prop.CountNum)
-	logger.Debug("Committing proposal with zxid", propZxid)
+	logger.Debug(fmt.Sprint("Committing proposal with zxid", propZxid))
 	queueCommitProposal(prop)
 }
 
@@ -184,7 +184,7 @@ func broadcastCommit() {
 	}
 	propJson, err := json.Marshal(prop)
 	if err != nil {
-		log.Fatal("Error on JSON conversion", err)
+		log.Fatal(fmt.Sprint("Error on JSON conversion", err))
 	}
 	zab := ZabMessage{
 		Prop,
@@ -236,7 +236,7 @@ func processRequest(req Request, remoteID string) error {
 func broadcastProposal(prop Proposal) {
 	propJson, err := json.Marshal(prop)
 	if err != nil {
-		log.Fatal("Error on JSON conversion", err)
+		log.Fatal(fmt.Sprint("Error on JSON conversion", err))
 	}
 	zab := ZabMessage{
 		Prop,
