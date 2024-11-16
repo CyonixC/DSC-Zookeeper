@@ -1,5 +1,7 @@
 package proposals
 
+import cxn "local/zookeeper/internal/ConnectionManager"
+
 // This file defines definitions for goroutines meant to be run constantly in
 // the background. The functions are defined for tasks which must be completed
 // sequentially.
@@ -24,5 +26,11 @@ func messageSender(toSendChan chan ToSendMessage) {
 		} else {
 			sendZabMessage(toSend.target, toSend.msg)
 		}
+	}
+}
+
+func messageReceiver(recv_channel chan cxn.NetworkMessage) {
+	for msg := range recv_channel {
+		processZabMessage(msg)
 	}
 }

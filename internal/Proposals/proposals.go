@@ -29,17 +29,28 @@ type checkFunction func([]byte) ([]byte, error)
 
 var requestChecker checkFunction
 
-func Init(check checkFunction) (committed chan []byte, denied chan Request) {
+func Init(networkChannel chan cxn.NetworkMessage, check checkFunction) (committed chan []byte, denied chan Request) {
 	go proposalWriter(newProposalChan)
 	go messageSender(toSendChan)
+	go messageReceiver(networkChannel)
 	committed = toCommitChan
 	requestChecker = check
 	denied = failedRequestChan
 	return
 }
 
+// Sends a new write request to a given machine.
+func SendWriteRequest(content []byte, requestNum int) {
+	req := Request{
+		ReqType:   Write,
+		ReqNumber: requestNum,
+		Content:   content,
+	}
+	sendRequest(req)
+}
+
 // Process a Zab message received from the network.
-func ProcessZabMessage(netMsg cxn.NetworkMessage) {
+func processZabMessage(netMsg cxn.NetworkMessage) {
 	src := netMsg.Remote
 	msgSerial := netMsg.Message
 	var msg ZabMessage
@@ -75,16 +86,6 @@ func ProcessZabMessage(netMsg cxn.NetworkMessage) {
 		deserialise(msg.Content, &prp)
 	}
 
-}
-
-// Sends a new write request to a given machine.
-func SendWriteRequest(content []byte, requestNum int) {
-	req := Request{
-		ReqType:   Write,
-		ReqNumber: requestNum,
-		Content:   content,
-	}
-	sendRequest(req)
 }
 
 // Process a received proposal
