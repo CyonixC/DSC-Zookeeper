@@ -185,7 +185,9 @@ func connectToSystemServers(serverNames []string) {
 func attemptConnection(serverName string, successChan chan NamedConnection) bool {
 	logger.Debug(fmt.Sprint("Attempting to connect to ", serverName))
 
-	conn, err := net.Dial("tcp", serverName+":8080")
+	// Dial with timeout
+	timeout := 1 * time.Second
+	conn, err := net.DialTimeout("tcp", serverName+":8080", timeout)
 
 	// Channel may be closed; in that case, ignore the panic.
 	defer func() { recover() }()

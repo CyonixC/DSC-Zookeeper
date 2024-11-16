@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"io"
 	"local/zookeeper/internal/logger"
-	"log"
+	"log/slog"
 	"os"
+	"fmt"
 )
 
 type Config struct {
@@ -15,6 +16,8 @@ type Config struct {
 
 func main() {
 	mode := os.Getenv("MODE") // "Server" or "Client"
+	handler := logger.NewPlainTextHandler(slog.LevelDebug)
+	logger.InitLogger(slog.New(handler))
 
 	if mode == "Server" {
 		logger.Info("Server starting...")
@@ -30,18 +33,18 @@ func main() {
 func loadConfig(filename string) Config {
 	file, err := os.Open(filename)
 	if err != nil {
-		log.Fatalf("Failed to open config file: %v", err)
+		logger.Fatal(fmt.Sprint("Failed to open config file: ", err))
 	}
 	defer file.Close()
 
 	bytes, err := io.ReadAll(file)
 	if err != nil {
-		log.Fatalf("Failed to read config file: %v", err)
+		logger.Fatal(fmt.Sprint("Failed to read config file: ", err))
 	}
 
 	var config Config
 	if err := json.Unmarshal(bytes, &config); err != nil {
-		log.Fatalf("Failed to parse config file: %v", err)
+		logger.Fatal(fmt.Sprint("Failed to parse config file: ", err))
 	}
 
 	return config
