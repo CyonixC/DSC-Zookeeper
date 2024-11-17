@@ -1,14 +1,14 @@
-package main
+package election
 
 import (
 	"encoding/json"
 	"fmt"
-	localconnectionmanager "local/zookeeper/internal/LocalConnectionManager"
-	"net"
+	connectionManager "local/zookeeper/internal/ConnectionManager"
+	"local/zookeeper/internal/logger"
 	"slices"
 )
 type MessageType int
-var addresses = []string{"192.168.10.1", "192.168.10.2", "192.168.10.3"}
+var addresses = []string{"server1", "server2", "sever3"}
 
 
 const (
@@ -25,7 +25,7 @@ type MessageWrapper struct {
 	Payload        []string
 }
 
-func reorderRing (ring_structure []string, id string) []string {
+func ReorderRing (ring_structure []string, id string) []string {
 	startIndex := slices.Index(ring_structure, id)
 	if startIndex == -1 {
 		return ring_structure 
@@ -43,6 +43,7 @@ func SendRingAnnouncement(nodeIP string, ring []string, content []string, messag
 func StartRingMessage(nodeIP string, ring_structure []string, messageContent []string, messageType MessageType, failedchan chan string) {
     visitedNodes := make([]string, 0, len(addresses))
     visitedNodes = append(visitedNodes, nodeIP)
+    fmt.Printf("Start Ring Message %s\n", nodeIP)
     message := MessageWrapper{
         messageType,
         visitedNodes,
@@ -52,51 +53,51 @@ func StartRingMessage(nodeIP string, ring_structure []string, messageContent []s
     go DispatchMessage(ring_structure,message,failedchan)
 }
 func DispatchMessage(ring_structure []string, message_cont MessageWrapper, failedchan chan string) {
+    fmt.Printf("Dispatch Message\n")
     messageBytes, err := json.Marshal(message_cont)
     if err != nil {
-        fmt.Println("Error encoding message:", err)
+        logger.Info(fmt.Sprint("Error encoding message:", err))
         return
     }
-    tcpAddr, err := net.ResolveIPAddr("ip", message_cont.Source)
     if err != nil {
-        fmt.Println("Error resolving Source address:", err)
+        logger.Info(fmt.Sprint("Error resolving Source address:", err))
         return
 	}
 	loop:
 for _, target := range ring_structure {
-    ipAddr, err := net.ResolveIPAddr("ip", target)
     if err != nil {
-        fmt.Println("Error resolving target address:", err)
+        logger.Info(fmt.Sprint("Error resolving target address:", err))
         return
     }
+    fmt.Print("Before Send")
+    connectionManager.SendMessage(connectionManager.NetworkMessage{Remote: target, Message: messageBytes})
+    fmt.Print("Afterr Send")
 
-    localconnectionmanager.SendMessage(localconnectionmanager.NetworkMessage{Remote: ipAddr, Message: messageBytes}, tcpAddr, failedchan)
-
-    // Wait for a potential failure or timeout
     select {
     case failedNode := <-failedchan:
-        fmt.Printf("Failed to send message to %s; retrying with next target\n", failedNode)
+        logger.Info(fmt.Sprint("Failed to send message to %s; retrying with next target\n", failedNode))
+
         // Continue to the next iteration, retry with the next target
     default: // Adjust the timeout duration as needed
-        fmt.Println("Message sent successfully, proceeding")
+    logger.Info(fmt.Sprint("Message sent successfully, proceeding"))
         break loop // This will break out of the for loop
     }
 }
 }
 
 func InitiateElectionDiscovery(nodeIP string, ring_structure []string, failedchan chan string) {
-    fmt.Printf("Node %d initiated election discovery\n", nodeIP)
+    logger.Info(fmt.Sprintf("Node %s initiated election discovery\n", nodeIP))
     initialContent := []string{}
     StartRingMessage(nodeIP, ring_structure, initialContent, MessageTypeDiscovery, failedchan)
 	
 }
 func Pass_message_down_ring(ring_structure []string, message MessageWrapper, id string, failedchan chan string) bool {
     if slices.Contains(message.Visited_Nodes, id) {
-        fmt.Printf("Node %s already visited, completing ring pass.\n", id)
+        logger.Info(fmt.Sprint("Node %s already visited, completing ring pass.\n", id))
         return true 
     } else {
         message.Visited_Nodes = append(message.Visited_Nodes, id)
-        fmt.Printf("Updated Visited Nodes: %s, thread id: %s\n", message.Visited_Nodes, id)
+        logger.Info(fmt.Sprint("Updated Visited Nodes: %s, thread id: %s\n", message.Visited_Nodes, id))
         message.Source = id
         go DispatchMessage(ring_structure, message, failedchan)
         return false
@@ -107,9 +108,9 @@ func HandleDiscoveryMessage(nodeIP string, ring_structure []string, message Mess
 	newmessage := Deepcopy(message)
     isComplete := Pass_message_down_ring(ring_structure, newmessage, nodeIP, failechan)
     if isComplete {
-        fmt.Println("Completed Discovery in", nodeIP, ":", newmessage.Visited_Nodes)
+        logger.Info(fmt.Sprint("Completed Discovery in", nodeIP, ":", newmessage.Visited_Nodes))
         electedCoordinator := slices.Max(newmessage.Visited_Nodes)
-        fmt.Println("New Coordinator", electedCoordinator)
+        logger.Info(fmt.Sprint("New Coordinator", electedCoordinator))
         go SendRingAnnouncement(nodeIP, ring_structure, []string{electedCoordinator}, MessageTypeAnnouncement, failechan)
     }
 }
@@ -118,7 +119,7 @@ func HandleAnnouncementMessage(nodeIP string, ring []string, message MessageWrap
     newmessage := Deepcopy(message)
     isComplete := Pass_message_down_ring(ring, newmessage, nodeIP, failedchan)
     if isComplete {
-        fmt.Println("Finish Election")
+        logger.Info(fmt.Sprint("Finish Election"))
         go SendRingAnnouncement(nodeIP,ring, newmessage.Visited_Nodes, MessageTypeNewRing,failedchan)
     }
     return newmessage.Payload[0]
@@ -139,15 +140,31 @@ func HandleMessage(nodeIP string, ring_structure []string, failedChan chan strin
         HandleDiscoveryMessage(nodeIP, ring_structure, messageWrapper, failedChan)
     case MessageTypeAnnouncement:
         coordinator = HandleAnnouncementMessage(nodeIP, ring_structure, messageWrapper, failedChan)
-        fmt.Println(nodeIP, "acknowledges new coordinator", coordinator)
+        logger.Info(fmt.Sprint(nodeIP, "acknowledges new coordinator", coordinator))
     case MessageTypeNewRing:
         updatedRing := HandleNewRingMessage(ring_structure, messageWrapper, nodeIP, failedChan)
-        ring_structure = reorderRing(updatedRing, nodeIP)
-        fmt.Println("Updated ring structure for node", nodeIP, ring_structure)
+        ring_structure = ReorderRing(updatedRing, nodeIP)
+        logger.Info(fmt.Sprint("Updated ring structure for node", nodeIP, ring_structure))
     }
 }
 
 
+func ElectionInit(addresses []string, address string) ([]string, chan string) {
+	// Create a default ring structure based on the provided addresses
+	defaultRing := make([]string, len(addresses))
+	for i := 0; i < len(addresses); i++ {
+		defaultRing[i] = addresses[i]
+	}
+
+	// Create a channel for failed sends
+	failedSends := make(chan string)
+
+	// Reorder the ring based on the current node's address
+	ringStructure := ReorderRing(defaultRing, address)
+
+	// Return the ring structure and the failed sends channel
+	return ringStructure, failedSends
+}
 func Deepcopy(msg_cont MessageWrapper) MessageWrapper {
     contentCopy := make([]string, len(msg_cont.Payload))
     copy(contentCopy, msg_cont.Payload)
