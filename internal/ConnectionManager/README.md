@@ -10,20 +10,56 @@ import (
 )
 ```
 
-To initialise, call the `Init()` function. This returns a single channel, the receive channel. Newly received messages will come in on this channel.
-
+### Message format
+The format of the send and received messages is the `NetworkMessage` struct:
 ```go
-recv := connectionManager.Init()
+type NetworkMessage struct {
+	Remote  string
+	Message []byte
+}
 ```
 
+`Remote` is the name of the node. With Docker, this is the name of the container. Messages to be sent / received should be serialised / deserialised accordingly.
+
+### Initialisation
+To initialise, call the `Init()` function.
+
+```go
+func Init() (receiveChannel chan NetworkMessage, failedSends chan string)
+```
+
+This returns two channels: the receive channel, and the failure channel. 
+1. Receive: Newly received messages will come in on this channel.
+2. Failure: The ID of any nodes that the current node failed to send to comes in on this channel.
+
+Both channels should be watched for incoming messages.
+
+Example:
+```go
+recv, failed := connectionManager.Init()
+```
+
+### Message sending
 To send a message, call the `SendMessage()` function:
+
+```go
+func SendMessage(toSend NetworkMessage) error
+```
+
+The target of the message should be placed in the network message struct in the `Remote` field.
+
 ```go
 var msg []byte
-remoteAddr := "192.168.0.1"
-err := connectionManager.SendMessage(NetworkMessage{remoteAddr, msg})
+remoteID := "server1"
+netMsg := connectionManager.NetworkMessage{
+    Remote: remoteID,
+    Message: msg,
+}
+connectionManager.SendMessage(netMsg)
 ```
 
 To broadcast a message, call the `Broadcast()` function. Note that this broadcasts to ALL KNOWN MACHINES! If you just want to broadcast to known servers, see ServerBroadcast below.
+Note that unlike `SendMessage`, this takes a regular `[]byte` array, not a `NetworkMessage`.
 ```go
 var msg []byte
 connectionManager.Broadcast(msg)
@@ -35,15 +71,4 @@ var msg []byte
 connectionManager.ServerBroadcast(msg)
 ```
 
-## Message format
-The format of the send and received messages is the `NetworkMessage` struct:
-```go
-type NetworkMessage struct {
-	Remote  string
-	Message []byte
-}
-```
-
-Messages to be sent / received should be serialised / deserialised accordingly.
-
-Note that the `Broadcast()` function does not require the message to be wrapped in the struct.
+TODO: Make ServerBroadcast attempt to send to all known servers instead of only the ones it has connections to

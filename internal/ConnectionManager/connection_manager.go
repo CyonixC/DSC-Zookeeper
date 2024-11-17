@@ -64,6 +64,83 @@ func Init() (receiveChannel chan NetworkMessage, failedSends chan string) {
 	return
 }
 
+// Find the right connection and send the message.
+// If the connection does not exist, attempt to establish it.
+// This is a blocking call!
+func SendMessage(toSend NetworkMessage) error {
+	logger.Debug(fmt.Sprint("Attempting to send message to ", toSend.Remote, "..."))
+	sendConnection, ok := ipToConnectionWrite.load(toSend.Remote)
+	remote := toSend.Remote
+	myName := os.Getenv("NAME")
+	toSend.Remote = myName
+	msg, err := json.Marshal(toSend)
+	if err != nil {
+		logger.Fatal(fmt.Sprint("Could not marshal message to JSON: ", toSend))
+	}
+	if ok {
+		sendConnection.SetDeadline(time.Now().Add(time.Duration(tcpRetryConnectionTimeoutSeconds) * time.Second))
+		_, err = sendConnection.Write(msg)
+		logger.Debug(fmt.Sprint("Sending message to ", remote, "..."))
+		if err != nil {
+			removeWriteChan <- NamedConnection{
+				Remote:     remote,
+				Connection: sendConnection,
+			}
+			return err
+		}
+	} else {
+		// We don't have an existing connection with this machine.
+		tempChan := make(chan NamedConnection)
+		attemptConnection(remote, tempChan)
+		newConnection := <-tempChan
+		if newConnection.Connection != nil {
+			newWriteChan <- newConnection
+			newConnection.Connection.SetDeadline(time.Now().Add(time.Duration(tcpRetryConnectionTimeoutSeconds) * time.Second))
+			_, err = newConnection.Connection.Write(msg)
+			logger.Debug(fmt.Sprint("Sending message to ", remote, "..."))
+			if err != nil {
+				removeWriteChan <- newConnection
+				return err
+			}
+		} else {
+			// Failed to establish new connection
+			return errors.New("could not establish TCP connection to target")
+		}
+	}
+	return nil
+}
+
+// Broadcast to all known machines.
+func Broadcast(toSend []byte) {
+	logger.Debug("Broadcasting message...")
+	ipToConnectionWrite.RLock()
+	defer ipToConnectionWrite.RUnlock()
+	for addr := range ipToConnectionWrite.connMap {
+		go func() {
+			err := SendMessage(NetworkMessage{addr, toSend})
+			if err != nil {
+				logger.Error(fmt.Sprint("Error in broadcast ", err))
+			}
+		}()
+	}
+}
+
+func ServerBroadcast(toSend []byte) {
+	logger.Debug("Broadcasting message to servers...")
+	ipToConnectionWrite.RLock()
+	defer ipToConnectionWrite.RUnlock()
+	for name := range ipToConnectionWrite.connMap {
+		if strings.HasPrefix(name, "server") {
+			go func() {
+				err := SendMessage(NetworkMessage{name, toSend})
+				if err != nil {
+					logger.Error(fmt.Sprint("Error in broadcast ", err))
+				}
+			}()
+		}
+	}
+}
+
 // Start listening on a TCP socket. The port number is in config.go.
 func startTCPListening(newConnChan chan net.Conn) (int, error) {
 
@@ -212,83 +289,6 @@ func attemptConnection(serverName string, successChan chan NamedConnection) bool
 	}()
 	logger.Debug(fmt.Sprint("Successfully connected to ", serverName))
 	return true
-}
-
-// Find the right connection and send the message.
-// If the connection does not exist, attempt to establish it.
-// This is a blocking call!
-func SendMessage(toSend NetworkMessage) error {
-	logger.Debug(fmt.Sprint("Attempting to send message to ", toSend.Remote, "..."))
-	sendConnection, ok := ipToConnectionWrite.load(toSend.Remote)
-	remote := toSend.Remote
-	myName := os.Getenv("NAME")
-	toSend.Remote = myName
-	msg, err := json.Marshal(toSend)
-	if err != nil {
-		logger.Fatal(fmt.Sprint("Could not marshal message to JSON: ", toSend))
-	}
-	if ok {
-		sendConnection.SetDeadline(time.Now().Add(time.Duration(tcpRetryConnectionTimeoutSeconds) * time.Second))
-		_, err = sendConnection.Write(msg)
-		logger.Debug(fmt.Sprint("Sending message to ", remote, "..."))
-		if err != nil {
-			removeWriteChan <- NamedConnection{
-				Remote:     remote,
-				Connection: sendConnection,
-			}
-			return err
-		}
-	} else {
-		// We don't have an existing connection with this machine.
-		tempChan := make(chan NamedConnection)
-		attemptConnection(remote, tempChan)
-		newConnection := <-tempChan
-		if newConnection.Connection != nil {
-			newWriteChan <- newConnection
-			newConnection.Connection.SetDeadline(time.Now().Add(time.Duration(tcpRetryConnectionTimeoutSeconds) * time.Second))
-			_, err = newConnection.Connection.Write(msg)
-			logger.Debug(fmt.Sprint("Sending message to ", remote, "..."))
-			if err != nil {
-				removeWriteChan <- newConnection
-				return err
-			}
-		} else {
-			// Failed to establish new connection
-			return errors.New("could not establish TCP connection to target")
-		}
-	}
-	return nil
-}
-
-// Broadcast to all known machines.
-func Broadcast(toSend []byte) {
-	logger.Debug("Broadcasting message...")
-	ipToConnectionWrite.RLock()
-	defer ipToConnectionWrite.RUnlock()
-	for addr := range ipToConnectionWrite.connMap {
-		go func() {
-			err := SendMessage(NetworkMessage{addr, toSend})
-			if err != nil {
-				logger.Error(fmt.Sprint("Error in broadcast ", err))
-			}
-		}()
-	}
-}
-
-func ServerBroadcast(toSend []byte) {
-	logger.Debug("Broadcasting message to servers...")
-	ipToConnectionWrite.RLock()
-	defer ipToConnectionWrite.RUnlock()
-	for name := range ipToConnectionWrite.connMap {
-		if strings.HasPrefix(name, "server") {
-			go func() {
-				err := SendMessage(NetworkMessage{name, toSend})
-				if err != nil {
-					logger.Error(fmt.Sprint("Error in broadcast ", err))
-				}
-			}()
-		}
-	}
 }
 
 // Runs in the background to log new write connections. If a new one is established while there
