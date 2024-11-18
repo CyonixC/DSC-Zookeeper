@@ -1,0 +1,3 @@
+{
+    "servers": [ "cxnServer1", "cxnServer2", "cxnServer3" ]
+}
