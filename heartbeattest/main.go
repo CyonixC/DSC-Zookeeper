@@ -14,11 +14,15 @@ type Config struct {
 	Clients []string `json:"clients"`
 }
 
+var config Config
+
 func main() {
 	mode := os.Getenv("MODE") // "Server" or "Client"
 	handler := logger.NewPlainTextHandler(slog.LevelDebug)
 	logger.InitLogger(slog.New(handler))
 
+	config = loadConfig("./config.json")
+ 
 	if mode == "Server" {
 		logger.Info("Server starting...")
 		go ServerMain()

@@ -29,25 +29,10 @@ services:
       - app-network
     container_name: server2
 
-  server3:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: compile-stage
-    # image: my-go-app
-    environment:
-      - MODE=Server
-      - NAME=server3
-    ports:
-      - "8084:8080"
-    networks:
-      - app-network
-    container_name: server3
-
   client1:
     build:
       context: .
-      dockerfile: client.Dockerfile
+      dockerfile: Dockerfile
       target: compile-stage
     # image: my-go-app
     environment:

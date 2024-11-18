@@ -10,15 +10,24 @@ import (
 	"time"
 )
 
+var connectedServer string
+
 // Main entry for client
 func ClientMain() {
-	recv, _ := connectionManager.Init()
+	recv, failedSendsChan := connectionManager.Init()
 
 	//Listener
 	go clientListener(recv)
 
+	//Look for available servers
+	findLiveServers()
+
 	//Heartbeat
 	go clientHeartbeat()
+
+	for failedSends := range failedSendsChan {
+		logger.Info(fmt.Sprint("Receive failedsend: ", failedSends))
+	}
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
@@ -45,15 +54,38 @@ func clientListener(recv_channel chan connectionManager.NetworkMessage) {
 	}
 }
 
+func findLiveServers() (bool) {
+	for server := range config.Servers {
+		data := []byte("HELLO")
+		err := connectionManager.SendMessage(connectionManager.NetworkMessage{Remote: config.Servers[server], Message: data})
+		if err != nil {
+			logger.Error(fmt.Sprint("Unable to connect to server: ", config.Servers[server]))
+		} else {
+			logger.Info(fmt.Sprint("Connected to server: ", config.Servers[server]))
+			connectedServer = config.Servers[server]
+			return true
+		}
+	}
+	logger.Error("Unable to connect to any server")
+	return false
+}
+
 func clientHeartbeat() {
 	for {
 		time.Sleep(time.Second * time.Duration(2))
 		data := []byte("HEARTBEAT")
-		err := connectionManager.SendMessage(connectionManager.NetworkMessage{Remote: "server3", Message: data})
+		err := connectionManager.SendMessage(connectionManager.NetworkMessage{Remote: connectedServer, Message: data})
 		if err != nil {
 			logger.Error("Heartbeat failed to send: " + err.Error())
+			for {
+				logger.Info("Attempting to reconnect to a new server")
+				success := findLiveServers()
+				if success{
+					break
+				}
+			}
 		} else {
-			logger.Info("Heartbeat sent to server")
+			logger.Info("Heartbeat sent to server: " + connectedServer)
 		}
 	}
 }
