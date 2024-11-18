@@ -403,7 +403,10 @@ func sendZabMessage(dest string, msg ZabMessage) {
 		log.Fatal(err)
 	}
 
-	cxn.SendMessage(cxn.NetworkMessage{Remote: dest, Message: serial})
+	err = cxn.SendMessage(cxn.NetworkMessage{Remote: dest, Message: serial})
+	if err != nil {
+		logger.Error(fmt.Sprint("Could not send message to ", dest, ":", err))
+	}
 }
 
 // Broadcast a Zab message over the network.

@@ -90,11 +90,13 @@ func SendMessage(toSend NetworkMessage) error {
 			return err
 		}
 	} else {
+		logger.Debug(fmt.Sprint("Attempting to send to ", remote, " when a connection does not exist"))
 		// We don't have an existing connection with this machine.
 		tempChan := make(chan NamedConnection)
-		attemptConnection(remote, tempChan)
+		go attemptConnection(remote, tempChan)
 		newConnection := <-tempChan
 		if newConnection.Connection != nil {
+			logger.Debug(fmt.Sprint("Connection attempt to ", remote, " was successful"))
 			newWriteChan <- newConnection
 			newConnection.Connection.SetDeadline(time.Now().Add(time.Duration(tcpRetryConnectionTimeoutSeconds) * time.Second))
 			_, err = newConnection.Connection.Write(msg)
@@ -106,6 +108,7 @@ func SendMessage(toSend NetworkMessage) error {
 			}
 		} else {
 			// Failed to establish new connection
+			logger.Error(fmt.Sprint("Could not establish connection to ", remote))
 			return errors.New("could not establish TCP connection to target")
 		}
 	}
@@ -160,6 +163,19 @@ func startTCPListening(newConnChan chan net.Conn) (int, error) {
 		}
 
 		newConnChan <- conn
+	}
+}
+
+func monitorConnection(connection net.Conn, id string) {
+	for {
+		one := make([]byte, 1)
+		connection.SetDeadline(time.Time{})
+		_, err := connection.Read(one)
+		if err != nil && err.Error() == "EOF" {
+			logger.Error(fmt.Sprint("Closed write connection detected to ", id))
+			connection.Close()
+			ipToConnectionWrite.remove(id)
+		}
 	}
 }
 
@@ -264,7 +280,7 @@ func attemptConnection(serverName string, successChan chan NamedConnection) bool
 	logger.Debug(fmt.Sprint("Attempting to connect to ", serverName))
 
 	// Dial with timeout
-	timeout := time.Duration(tcpRetryConnectionTimeoutSeconds) * time.Second
+	timeout := time.Duration(tcpEstablishTimeoutSeconds) * time.Second
 	conn, err := net.DialTimeout("tcp", serverName+":8080", timeout)
 
 	// Channel may be closed; in that case, ignore the panic.
@@ -276,11 +292,11 @@ func attemptConnection(serverName string, successChan chan NamedConnection) bool
 
 	if err != nil {
 		// Failed to connect, return nil
+		logger.Debug(fmt.Sprint("Failed to connect to ", serverName, ". Reporting to channel ", successChan))
 		successChan <- NamedConnection{
 			Remote:     serverName,
 			Connection: nil,
 		}
-		logger.Debug(fmt.Sprint("Failed to connect to ", serverName))
 		return false
 	}
 	go func() {
@@ -290,6 +306,7 @@ func attemptConnection(serverName string, successChan chan NamedConnection) bool
 		}
 	}()
 	logger.Debug(fmt.Sprint("Successfully connected to ", serverName))
+	go monitorConnection(conn, serverName)
 	return true
 }
 
