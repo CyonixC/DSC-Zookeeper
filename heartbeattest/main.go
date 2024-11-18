@@ -5,16 +5,17 @@ import (
 	"local/zookeeper/internal/logger"
 	"log/slog"
 	"os"
+	"time"
 )
 
 var config configReader.Config
 
 func main() {
 	mode := os.Getenv("MODE") // "Server" or "Client"
-	handler := logger.NewPlainTextHandler(slog.LevelDebug)
+	handler := logger.NewColouredTextHandler(slog.LevelDebug)
 	logger.InitLogger(slog.New(handler))
 
-	config := *configReader.GetConfig()
+	config = *configReader.GetConfig()
 
 	if mode == "Server" {
 		logger.Info("Server starting...")
@@ -23,5 +24,5 @@ func main() {
 		logger.Info("Client starting...")
 		go ClientMain()
 	}
-
+	time.Sleep(time.Hour)
 }
