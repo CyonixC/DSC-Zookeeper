@@ -74,3 +74,15 @@ func Encode_setdata(path string, data []byte, version int) ([]byte, error) {
 	}
 	return data, nil
 }
+
+// Encode_sync creates a special write request for sync API call
+func Encode_sync() ([]byte, error) {
+	req := &write_request{
+		Request: "sync",
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}

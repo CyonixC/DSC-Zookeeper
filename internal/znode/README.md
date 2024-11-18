@@ -88,6 +88,13 @@ request, err := znode.Encode_setdata(path, data, version)
 ```
 
 
+`Encode_sync()` corresponds to the sync() client API
+```go
+var request []byte
+var err error
+request, err := znode.Encode_setdata()
+```
+
 ## Processing Write Requests
 
 These functions take in write requests encoded by the above functions.
