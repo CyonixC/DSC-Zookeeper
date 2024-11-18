@@ -72,6 +72,9 @@ func Check(data []byte) ([]byte, error) {
 			return nil, err
 		}
 		return data, nil
+
+	case "sync":
+		return data, nil
 	default:
 		return nil, &InvalidRequestError{"Invalid request: " + req.Request}
 	}
