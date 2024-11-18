@@ -12,15 +12,30 @@ import (
 
 ### Usage
 ```go
-config_ptr := configReader.GetConfig()
-// or
-config := *configReader.GetConfig()
+// Get a pointer to the Config object
+var config_ptr *Config
+config_ptr = configReader.GetConfig()
+
+
+// Get the mode
+var mode Mode
+mode = configReader.GetMode()
+
+// Get the name
+var name string
+name = configReader.GetMode()
 ```
 
-Structure of config is as follows:
+Type of `Config` and `Mode` is as follows:
 ```go
 type Config struct {
 	Servers []string `json:"servers"`
 	Clients []string `json:"clients"`
 }
+
+// Like an enum
+const (
+	SERVER Mode = iota
+	CLIENT
+)
 ```

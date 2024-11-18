@@ -13,6 +13,13 @@ type Config struct {
 	Clients []string `json:"clients"`
 }
 
+type Mode int
+
+const (
+	SERVER Mode = iota
+	CLIENT
+)
+
 var config_instance Config
 var once sync.Once
 
@@ -21,6 +28,20 @@ func GetConfig() *Config {
 		config_instance = loadConfig("config.json")
 	})
 	return &config_instance
+}
+
+func GetMode() Mode {
+	mode := os.Getenv("MODE")
+	if mode == "Server" {
+		return SERVER
+	} else if mode == "Client" {
+		return CLIENT
+	}
+	panic("Invalid mode detected!")
+}
+
+func GetName() string {
+	return os.Getenv("NAME")
 }
 
 func loadConfig(filename string) Config {
