@@ -47,8 +47,7 @@ func Init() (receiveChannel chan NetworkMessage, failedSends chan string) {
 
 	// The ID of any machine which this node failed to send to is sent on this channel.
 	// This failure should be handled by external code.
-	failedSendsChan := make(chan string, 10)
-	failedSends = failedSendsChan
+	failedSends = make(chan string, 10)
 
 	// Any failed connections are sent to this channel.
 	removeWriteChan = make(chan NamedConnection, 10)
@@ -112,6 +111,7 @@ func SendMessage(toSend NetworkMessage) error {
 		} else {
 			// Failed to establish new connection
 			logger.Error(fmt.Sprint("Could not establish connection to ", remote))
+			// failedSendsChan <- remote
 			return errors.New("could not establish TCP connection to target")
 		}
 	}
@@ -176,8 +176,11 @@ func monitorConnection(connection net.Conn, id string) {
 		_, err := connection.Read(one)
 		if err != nil && err.Error() == "EOF" {
 			logger.Error(fmt.Sprint("Closed write connection detected to ", id))
-			connection.Close()
-			ipToConnectionWrite.remove(id)
+			removeWriteChan <- NamedConnection{
+				Remote:     id,
+				Connection: connection,
+			}
+			return
 		}
 	}
 }
