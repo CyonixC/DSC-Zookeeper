@@ -6,6 +6,7 @@ package connectionManager
 // The read channel is created when the other node tries to connect to this node.
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -78,6 +79,7 @@ func SendMessage(toSend NetworkMessage) error {
 	if err != nil {
 		logger.Fatal(fmt.Sprint("Could not marshal message to JSON: ", toSend))
 	}
+	msg = append(msg, '\n')
 	if ok {
 		sendConnection.SetDeadline(time.Now().Add(time.Duration(tcpWriteTimeoutSeconds) * time.Second))
 		_, err = sendConnection.Write(msg)
@@ -183,11 +185,11 @@ func monitorConnection(connection net.Conn, id string) {
 // Start receiving data on the given connection. Any data is sent to recv_channel.
 func startReceiving(recv_channel chan NetworkMessage, connection net.Conn) {
 	defer connection.Close()
-	buffer := make([]byte, 1024)
+	reader := bufio.NewReader(connection)
 	for {
 		// Read binary data into the buffer
 		connection.SetDeadline(time.Time{})
-		n, err := connection.Read(buffer)
+		msg, err := reader.ReadBytes('\n')
 		if err != nil {
 			// If EOF, the connection was closed by the remote host
 			if err.Error() == "EOF" {
@@ -199,9 +201,9 @@ func startReceiving(recv_channel chan NetworkMessage, connection net.Conn) {
 		}
 
 		ret := NetworkMessage{}
-		err = json.Unmarshal(buffer[:n], &ret)
+		err = json.Unmarshal(msg[:len(msg)-1], &ret)
 		if err != nil {
-			logger.Fatal(fmt.Sprint("Could not convert received message to JSON: ", buffer[:n]))
+			logger.Fatal(fmt.Sprint("Could not convert received message to JSON: ", string(msg[:len(msg)-1])))
 		}
 		go func() { recv_channel <- ret }()
 	}
