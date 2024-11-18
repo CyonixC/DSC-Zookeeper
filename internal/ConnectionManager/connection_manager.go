@@ -82,6 +82,7 @@ func SendMessage(toSend NetworkMessage) error {
 		_, err = sendConnection.Write(msg)
 		logger.Debug(fmt.Sprint("Sending message to ", remote, "..."))
 		if err != nil {
+			logger.Error(fmt.Sprint("Error sending message to ", remote))
 			removeWriteChan <- NamedConnection{
 				Remote:     remote,
 				Connection: sendConnection,
