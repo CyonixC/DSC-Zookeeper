@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	configReader "local/zookeeper/internal/ConfigReader"
 	"local/zookeeper/internal/logger"
 	"log"
 	"net"
@@ -59,7 +60,7 @@ func Init() (receiveChannel chan NetworkMessage, failedSends chan string) {
 	go writeConnectionManager(newWriteChan)
 	go removeConnectionManager(failedSends)
 
-	serverNames := ip_list
+	serverNames := configReader.GetConfig().Servers
 	connectToSystemServers(serverNames)
 	return
 }
@@ -71,14 +72,14 @@ func SendMessage(toSend NetworkMessage) error {
 	logger.Debug(fmt.Sprint("Attempting to send message to ", toSend.Remote, "..."))
 	sendConnection, ok := ipToConnectionWrite.load(toSend.Remote)
 	remote := toSend.Remote
-	myName := os.Getenv("NAME")
+	myName := configReader.GetName()
 	toSend.Remote = myName
 	msg, err := json.Marshal(toSend)
 	if err != nil {
 		logger.Fatal(fmt.Sprint("Could not marshal message to JSON: ", toSend))
 	}
 	if ok {
-		sendConnection.SetDeadline(time.Now().Add(time.Duration(tcpRetryConnectionTimeoutSeconds) * time.Second))
+		sendConnection.SetDeadline(time.Now().Add(time.Duration(tcpWriteTimeoutSeconds) * time.Second))
 		_, err = sendConnection.Write(msg)
 		logger.Debug(fmt.Sprint("Sending message to ", remote, "..."))
 		if err != nil {
@@ -209,6 +210,7 @@ func startReceiving(recv_channel chan NetworkMessage, connection net.Conn) {
 // Unused
 func makeSocketAddrList() ([]net.Addr, error) {
 	var allAddresses []net.Addr
+	ip_list := configReader.GetConfig().Servers
 	if slices.Contains(ip_list, "localhost") || slices.Contains(ip_list, "127.0.0.1") {
 		// using localhost setting
 		tcpPortStr := fmt.Sprintf("localhost:%d", portNum)
