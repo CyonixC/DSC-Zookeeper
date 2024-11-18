@@ -2,9 +2,6 @@ services:
   server1:
     build: 
       context: .
-      dockerfile: Dockerfile
-      target: compile-stage
-    # image: my-go-app
     environment:
       - MODE=Server
       - NAME=server1
@@ -17,9 +14,6 @@ services:
   server2:
     build:
       context: .
-      dockerfile: Dockerfile
-      target: compile-stage
-    # image: my-go-app
     environment:
       - MODE=Server
       - NAME=server2
@@ -32,21 +26,16 @@ services:
   client1:
     build:
       context: .
-      dockerfile: Dockerfile
-      target: compile-stage
-    # image: my-go-app
     environment:
       - MODE=Client
       - NAME=client1
     ports:
       - "8083:8080"
-    volumes:
-      - ./servers.json:/app/servers.json # Mount JSON config file
     networks:
       - app-network
     container_name: client1
-    stdin_open: true   # Keep stdin open
-    tty: true          # Allocate a pseudo-TTY
+    # stdin_open: true
+
 
 networks:
   app-network:
