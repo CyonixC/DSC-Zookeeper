@@ -16,7 +16,6 @@ import (
 	"net"
 	"os"
 	"slices"
-	"strings"
 	"time"
 )
 
@@ -127,7 +126,7 @@ func Broadcast(toSend []byte) {
 		go func() {
 			err := SendMessage(NetworkMessage{addr, toSend})
 			if err != nil {
-				logger.Error(fmt.Sprint("Error in broadcast ", err))
+				logger.Error(fmt.Sprint("Error in broadcast:", err))
 			}
 		}()
 	}
@@ -137,15 +136,13 @@ func ServerBroadcast(toSend []byte) {
 	logger.Debug("Broadcasting message to servers...")
 	ipToConnectionWrite.RLock()
 	defer ipToConnectionWrite.RUnlock()
-	for name := range ipToConnectionWrite.connMap {
-		if strings.HasPrefix(name, "server") {
-			go func() {
-				err := SendMessage(NetworkMessage{name, toSend})
-				if err != nil {
-					logger.Error(fmt.Sprint("Error in broadcast ", err))
-				}
-			}()
-		}
+	for _, name := range configReader.GetConfig().Servers {
+		go func() {
+			err := SendMessage(NetworkMessage{name, toSend})
+			if err != nil {
+				logger.Error(fmt.Sprint("Error in server broadcast:", err))
+			}
+		}()
 	}
 }
 
