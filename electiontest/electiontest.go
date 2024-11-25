@@ -38,7 +38,7 @@ func client(address string) {
 		select {
 		case receivedMsg := <-recv:
 			fmt.Printf("Received Message %s from %s\n", receivedMsg, address)
-			// timeoutTimer.Reset(timeoutDuration)
+			timeoutTimer.Reset(timeoutDuration)
 			var messageWrapper election.MessageWrapper
 			err := json.Unmarshal(receivedMsg.Message, &messageWrapper)
 			if err != nil {
