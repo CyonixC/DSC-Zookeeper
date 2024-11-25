@@ -3,7 +3,7 @@
 FROM golang:1.23 AS build-stage
 
 # Install some network related stuff for debugging
-RUN apt update && apt -y install iproute2
+# RUN apt update && apt -y install iproute2
 
 # Set destination for COPY
 WORKDIR /app
@@ -25,7 +25,6 @@ EXPOSE 8080
 COPY config.json ./
 
 FROM build-stage AS compile-stage
-RUN CGO_ENABLED=0 GOOS=linux go build -o ./go-main ./heartbeattest/
-
+RUN CGO_ENABLED=0 GOOS=linux go build -o ./go-main ./electiontest/
 # Run
 CMD ["./go-main"]
