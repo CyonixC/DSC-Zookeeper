@@ -48,6 +48,8 @@ func SendMessage(toSend NetworkMessage) error
 
 The target of the message should be placed in the network message struct in the `Remote` field.
 
+If an existing connection has not been established with the remote machine, this function will attempt to establish a connection. In this case, if it fails to create the connection, THE FAILEDSENDS CHANNEL WILL NOT OUTPUT AN ERROR. If you want to attempt a connection to a new machine and get back a success/failure message, check the if the error returned by this function is `nil`.
+
 ```go
 var msg []byte
 remoteID := "server1"
@@ -70,5 +72,3 @@ To broadcast to all known servers, use the `ServerBroadcast()` function. Current
 var msg []byte
 connectionManager.ServerBroadcast(msg)
 ```
-
-TODO: Make ServerBroadcast attempt to send to all known servers instead of only the ones it has connections to
