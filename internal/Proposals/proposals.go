@@ -16,7 +16,7 @@ var currentCoordinator string = "server1"
 
 var n_systems int
 
-var zxidCounter ZXIDCounter
+var ZxidCounter ZXIDCounter
 var ackCounter = AckCounter{ackTracker: make(map[uint32]int)}
 var proposalsQueue SafeQueue[Proposal]
 var syncTrack SyncTracker
@@ -119,7 +119,7 @@ func processStateChangeProposal(prop Proposal, source string, originalMsg ZabMes
 	logger.Info(fmt.Sprint("receives proposal with zxid", propZxid))
 	epoch := prop.EpochNum
 	count := prop.CountNum
-	zxidCounter.setVals(epoch, count)
+	ZxidCounter.setVals(epoch, count)
 
 	// If we're currently syncing, automatically save and commit, and don't ACK.
 	syncing, zxidCap := syncTrack.readVals()
@@ -161,7 +161,7 @@ func processNewLeaderProposal(prop Proposal, source string, originalMsg ZabMessa
 	}
 
 	latestZxid := bytesToUint32(prop.Content)
-	currentEpoch, currentCount := zxidCounter.check()
+	currentEpoch, currentCount := ZxidCounter.Check()
 	currentZxid := getZXIDAsInt(currentEpoch, currentCount)
 	// Already holding the latest proposal, just ACK and return.
 	if currentZxid == latestZxid {
@@ -242,7 +242,7 @@ func processRequest(req Request, remoteID string) error {
 			return err
 		}
 
-		epoch, count := zxidCounter.incCount()
+		epoch, count := ZxidCounter.incCount()
 		zxid := getZXIDAsInt(epoch, count)
 		ackCounter.storeNew(zxid)
 		prop := Proposal{
@@ -256,7 +256,7 @@ func processRequest(req Request, remoteID string) error {
 		broadcastProposal(prop)
 	case Sync:
 		// Don't check coodinator status, just send to make it simple
-		highestEpoch, highestCount := zxidCounter.check()
+		highestEpoch, highestCount := ZxidCounter.Check()
 		sentzxid := bytesToUint32(req.Content)
 		sentEpoch, count := decomposeZXID(sentzxid)
 
