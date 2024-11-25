@@ -2,11 +2,13 @@ package main
 
 import (
 	connectionManager "local/zookeeper/internal/ConnectionManager"
+	configReader "local/zookeeper/internal/ConfigReader"
 	"local/zookeeper/internal/logger"
 	"time"
 	"fmt"
 	"encoding/json"
 	"strings"
+	"local/zookeeper/election"
 )
 
 // Main entry for server
@@ -14,12 +16,38 @@ func ServerMain() {
 	recv, _ := connectionManager.Init()
 
 	//Listener
-	go serverlistener(recv)
+	//go serverlistener(recv)
 
 	//Heartbeat
-	go serverHeartbeat()
+	//go serverHeartbeat()
 
-	
+	//Election
+	my_address := configReader.GetName()
+	ringStruct, failedChan := election.ElectionInit(config.Servers, my_address)
+
+	timeoutDuration := 1 * time.Second
+	timeoutTimer := time.NewTimer(timeoutDuration)
+
+	for {
+		select {
+		case receivedMsg := <-recv:
+			fmt.Printf("Received Message %s", my_address)
+			timeoutTimer.Reset(timeoutDuration)
+
+			var messageWrapper election.MessageWrapper
+			err := json.Unmarshal(receivedMsg.Message, &messageWrapper)
+			if err != nil {
+				logger.Fatal(fmt.Sprint("Error unmarshalling message:", err))
+			}
+			election.HandleMessage(my_address, ringStruct, failedChan, messageWrapper)
+
+		case <-timeoutTimer.C: // Timeout occurred
+			fmt.Println("Timeout occurred. Initiating election.")
+			election.InitiateElectionDiscovery(my_address, ringStruct, failedChan)
+
+			timeoutTimer.Reset(timeoutDuration)
+		}
+	}
 }
 
 // Send unstrctured data to a client

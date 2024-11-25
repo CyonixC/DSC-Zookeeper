@@ -8,8 +8,7 @@ import (
 	"slices"
 )
 type MessageType int
-var addresses = []string{"server1", "server2", "sever3"}
-
+var server_addresses []string
 
 const (
 	MessageTypeDiscovery = iota
@@ -41,7 +40,7 @@ func SendRingAnnouncement(nodeIP string, ring []string, content []string, messag
     StartRingMessage(nodeIP, ring, content, messageType, failedchan)
 }
 func StartRingMessage(nodeIP string, ring_structure []string, messageContent []string, messageType MessageType, failedchan chan string) {
-    visitedNodes := make([]string, 0, len(addresses))
+    visitedNodes := make([]string, 0, len(server_addresses))
     visitedNodes = append(visitedNodes, nodeIP)
     fmt.Printf("Start Ring Message %s\n", nodeIP)
     message := MessageWrapper{
@@ -93,11 +92,11 @@ func InitiateElectionDiscovery(nodeIP string, ring_structure []string, failedcha
 }
 func Pass_message_down_ring(ring_structure []string, message MessageWrapper, id string, failedchan chan string) bool {
     if slices.Contains(message.Visited_Nodes, id) {
-        logger.Info(fmt.Sprint("Node %s already visited, completing ring pass.\n", id))
+        logger.Info(fmt.Sprint("Node ", id, " already visited, completing ring pass."))
         return true 
     } else {
         message.Visited_Nodes = append(message.Visited_Nodes, id)
-        logger.Info(fmt.Sprint("Updated Visited Nodes: %s, thread id: %s\n", message.Visited_Nodes, id))
+        logger.Info(fmt.Sprint("Updated Visited Nodes: ", message.Visited_Nodes, " thread id: ", id))
         message.Source = id
         go DispatchMessage(ring_structure, message, failedchan)
         return false
@@ -140,16 +139,17 @@ func HandleMessage(nodeIP string, ring_structure []string, failedChan chan strin
         HandleDiscoveryMessage(nodeIP, ring_structure, messageWrapper, failedChan)
     case MessageTypeAnnouncement:
         coordinator = HandleAnnouncementMessage(nodeIP, ring_structure, messageWrapper, failedChan)
-        logger.Info(fmt.Sprint(nodeIP, "acknowledges new coordinator", coordinator))
+        logger.Info(fmt.Sprint(nodeIP, " acknowledges new coordinator ", coordinator))
     case MessageTypeNewRing:
         updatedRing := HandleNewRingMessage(ring_structure, messageWrapper, nodeIP, failedChan)
         ring_structure = ReorderRing(updatedRing, nodeIP)
-        logger.Info(fmt.Sprint("Updated ring structure for node", nodeIP, ring_structure))
+        logger.Info(fmt.Sprint("Updated ring structure for node ", nodeIP, ring_structure))
     }
 }
 
 
 func ElectionInit(addresses []string, address string) ([]string, chan string) {
+    server_addresses = addresses
 	// Create a default ring structure based on the provided addresses
 	defaultRing := make([]string, len(addresses))
 	for i := 0; i < len(addresses); i++ {
