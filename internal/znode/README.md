@@ -89,10 +89,12 @@ request, err := znode.Encode_setdata(path, data, version)
 
 
 `Encode_sync()` corresponds to the sync() client API
+Creates empty write request that will autopass the check by server
+Write() does not currently handle this, server that made sync request to detect and complete sync operation
 ```go
 var request []byte
 var err error
-request, err := znode.Encode_setdata()
+request, err := znode.Encode_sync()
 ```
 
 ## Processing Write Requests
