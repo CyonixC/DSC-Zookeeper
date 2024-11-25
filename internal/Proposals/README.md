@@ -49,3 +49,10 @@ func SendWriteRequest(content []byte, requestNum int)
 ```
 - `content` - the serialised commit request message.
 - `requestNum` - the serial number that should be associated with this request. This is to help associate requests with returned errors. For a single session, the IDs of all its requests should be unique to prevent errors from being associated with the wrong request.
+
+### 3. Checking ZXID
+For election, you might need to get the latest seen ZXID; for this, use the `ZxidCounter` package variable:
+
+```go
+zxid := proposals.ZxidCounter.GetLatestZXID()
+```

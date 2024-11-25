@@ -161,7 +161,7 @@ func processNewLeaderProposal(prop Proposal, source string, originalMsg ZabMessa
 	}
 
 	latestZxid := bytesToUint32(prop.Content)
-	currentEpoch, currentCount := ZxidCounter.Check()
+	currentEpoch, currentCount := ZxidCounter.check()
 	currentZxid := getZXIDAsInt(currentEpoch, currentCount)
 	// Already holding the latest proposal, just ACK and return.
 	if currentZxid == latestZxid {
@@ -256,7 +256,7 @@ func processRequest(req Request, remoteID string) error {
 		broadcastProposal(prop)
 	case Sync:
 		// Don't check coodinator status, just send to make it simple
-		highestEpoch, highestCount := ZxidCounter.Check()
+		highestEpoch, highestCount := ZxidCounter.check()
 		sentzxid := bytesToUint32(req.Content)
 		sentEpoch, count := decomposeZXID(sentzxid)
 

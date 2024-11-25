@@ -11,6 +11,12 @@ type ZXIDCounter struct {
 	countNum uint16
 }
 
+func (cnt *ZXIDCounter) GetLatestZXID() (zxid uint32) {
+	epoch, count := cnt.check()
+	zxid = getZXIDAsInt(epoch, count)
+	return
+}
+
 // Get the current ZXID
 func (cnt *ZXIDCounter) check() (epochNum uint16, countNum uint16) {
 	cnt.RLock()
