@@ -5,6 +5,7 @@ package proposals
 import (
 	"encoding/json"
 	"fmt"
+	configReader "local/zookeeper/internal/ConfigReader"
 	cxn "local/zookeeper/internal/ConnectionManager"
 	"local/zookeeper/internal/logger"
 	"log"
@@ -13,7 +14,7 @@ import (
 
 var currentCoordinator string = "server1"
 
-const n_systems = 3
+var n_systems int
 
 var zxidCounter ZXIDCounter
 var ackCounter = AckCounter{ackTracker: make(map[uint32]int)}
@@ -29,10 +30,15 @@ type checkFunction func([]byte) ([]byte, error)
 
 var requestChecker checkFunction
 
+// Initialise the background goroutines for handling proposals. This Init function takes:
+// - A channel which NetworkMessages arrive on from the network
+// - A "check" function which takes in data in a proposal and returns modified data to be used. This function returns an error if
+// the check fails.
 func Init(networkChannel chan cxn.NetworkMessage, check checkFunction) (committed chan []byte, denied chan Request) {
 	go proposalWriter(newProposalChan)
 	go messageSender(toSendChan)
 	go messageReceiver(networkChannel)
+	n_systems = len(configReader.GetConfig().Servers)
 	committed = toCommitChan
 	requestChecker = check
 	denied = failedRequestChan
