@@ -13,7 +13,7 @@ import (
 )
 var config configReader.Config
 var addresses = []string{"server1", "server2", "server3", "server4"}
-var testbool = 1
+
 func main() {
 	mode := os.Getenv("MODE") // "Server" or "Client"
 	handler := logger.NewPlainTextHandler(slog.LevelDebug)
@@ -30,8 +30,7 @@ func client(address string) {
 
 	timeoutDuration := 10 * time.Second
 	timeoutTimer := time.NewTimer(timeoutDuration)
-	if address=="server4" && testbool==1{
-		testbool=0
+	if address=="server1"{
 		election.InitiateElectionDiscovery(address, failedchan)
 	}
 	for {
