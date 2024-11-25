@@ -16,6 +16,7 @@ import (
 	"net"
 	"os"
 	"slices"
+	"sync"
 	"time"
 )
 
@@ -122,14 +123,18 @@ func Broadcast(toSend []byte) {
 	logger.Debug("Broadcasting message...")
 	ipToConnectionWrite.RLock()
 	defer ipToConnectionWrite.RUnlock()
+	var wg sync.WaitGroup
 	for addr := range ipToConnectionWrite.connMap {
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			err := SendMessage(NetworkMessage{addr, toSend})
 			if err != nil {
 				logger.Error(fmt.Sprint("Error in broadcast:", err))
 			}
 		}()
 	}
+	wg.Wait()
 }
 
 func ServerBroadcast(toSend []byte) {
