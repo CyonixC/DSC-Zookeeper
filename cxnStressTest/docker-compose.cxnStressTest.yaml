@@ -38,6 +38,69 @@ services:
       - app-network
     container_name: cxnServer3
 
+  server4:
+    build:
+      context: ..
+      dockerfile: cxnStressTest/Dockerfile
+    environment:
+      - MODE=Server
+      - NAME=server4
+    ports:
+      - "8084:8080"
+    networks:
+      - app-network
+    container_name: cxnServer4
+
+  server5:
+    build:
+      context: ..
+      dockerfile: cxnStressTest/Dockerfile
+    environment:
+      - MODE=Server
+      - NAME=server5
+    ports:
+      - "8085:8080"
+    networks:
+      - app-network
+    container_name: cxnServer5
+
+  server6:
+    build:
+      context: ..
+      dockerfile: cxnStressTest/Dockerfile
+    environment:
+      - MODE=Server
+      - NAME=server6
+    ports:
+      - "8086:8080"
+    networks:
+      - app-network
+    container_name: cxnServer6
+  server7:
+    build:
+      context: ..
+      dockerfile: cxnStressTest/Dockerfile
+    environment:
+      - MODE=Server
+      - NAME=server7
+    ports:
+      - "8087:8080"
+    networks:
+      - app-network
+    container_name: cxnServer7
+  server8:
+    build:
+      context: ..
+      dockerfile: cxnStressTest/Dockerfile
+    environment:
+      - MODE=Server
+      - NAME=server8
+    ports:
+      - "8088:8080"
+    networks:
+      - app-network
+    container_name: cxnServer8
+
 networks:
   app-network:
     name: app-network
