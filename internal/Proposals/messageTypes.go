@@ -52,6 +52,23 @@ func (pt ProposalType) ToStr() string {
 	return "unknown"
 }
 
+// Convert enum to string, for debugging
+func (pt ZabMessageType) ToStr() string {
+	switch pt {
+	case Req:
+		return "Request"
+	case Prop:
+		return "Proposal"
+	case ACK:
+		return "Acknowledge"
+	case Err:
+		return "Error"
+	case SyncErr:
+		return "Sync Error"
+	}
+	return "unknown"
+}
+
 // Request type - message sent from a non-coordinator to the coordinator
 type RequestType int
 type Request struct {

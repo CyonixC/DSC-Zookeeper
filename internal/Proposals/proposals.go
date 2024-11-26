@@ -85,13 +85,6 @@ func processZabMessage(netMsg cxn.NetworkMessage) {
 		logger.Error(fmt.Sprint("Received SYNC ERROR! Check if current coordinator is correct: ", currentCoordinator))
 	}
 
-	// ACK section
-	if msg.ZabType == Prop {
-		// Only acknowledge proposals that are StateChange
-		var prp Proposal
-		deserialise(msg.Content, &prp)
-	}
-
 }
 
 // Process a received proposal
@@ -366,10 +359,7 @@ func makeACK(msg ZabMessage) (ack ZabMessage) {
 func sendRequest(req Request) {
 	name := os.Getenv("NAME")
 	if currentCoordinator == name {
-		err := processRequest(req, name)
-		if err != nil {
-			logger.Error(fmt.Sprint("Error processing request - ", err))
-		}
+		processRequest(req, name)
 		return
 	}
 
