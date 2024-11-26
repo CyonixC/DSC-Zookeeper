@@ -34,9 +34,13 @@ This returns two channels: the receive channel, and the failure channel.
 
 Both channels should be watched for incoming messages.
 
+For most reliable performance, put a wait before and after the `Init()` call.
+
 Example:
 ```go
+time.Sleep(time.Second)
 recv, failed := connectionManager.Init()
+time.Sleep(time.Second)
 ```
 
 ### Message sending

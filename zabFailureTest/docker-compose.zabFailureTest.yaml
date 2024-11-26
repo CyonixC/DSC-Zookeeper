@@ -1,3 +1,5 @@
+volumes:
+  logs:
 services:
   server1:
     build: 
@@ -11,6 +13,8 @@ services:
     networks:
       - app-network
     container_name: zabServer1
+    volumes:
+      - logs:/logs
 
   server2:
     build:
@@ -24,6 +28,8 @@ services:
     networks:
       - app-network
     container_name: zabServer2
+    volumes:
+      - logs:/logs
 
   server3:
     build:
@@ -37,6 +43,79 @@ services:
     networks:
       - app-network
     container_name: zabServer3
+    volumes:
+      - logs:/logs
+
+  server4:
+    build:
+      context: ..
+      dockerfile: zabFailureTest/Dockerfile
+    environment:
+      - MODE=Server
+      - NAME=zabServer4
+    ports:
+      - "8084:8080"
+    networks:
+      - app-network
+    container_name: zabServer4
+    volumes:
+      - logs:/logs
+  server5:
+    build:
+      context: ..
+      dockerfile: zabFailureTest/Dockerfile
+    environment:
+      - MODE=Server
+      - NAME=zabServer5
+    ports:
+      - "8085:8080"
+    networks:
+      - app-network
+    container_name: zabServer5
+    volumes:
+      - logs:/logs
+  server6:
+    build:
+      context: ..
+      dockerfile: zabFailureTest/Dockerfile
+    environment:
+      - MODE=Server
+      - NAME=zabServer6
+    ports:
+      - "8086:8080"
+    networks:
+      - app-network
+    container_name: zabServer6
+    volumes:
+      - logs:/logs
+  server7:
+    build:
+      context: ..
+      dockerfile: zabFailureTest/Dockerfile
+    environment:
+      - MODE=Server
+      - NAME=zabServer7
+    ports:
+      - "8087:8080"
+    networks:
+      - app-network
+    container_name: zabServer7
+    volumes:
+      - logs:/logs
+  server8:
+    build:
+      context: ..
+      dockerfile: zabFailureTest/Dockerfile
+    environment:
+      - MODE=Server
+      - NAME=zabServer8
+    ports:
+      - "8088:8080"
+    networks:
+      - app-network
+    container_name: zabServer8
+    volumes:
+      - logs:/logs
 
 networks:
   app-network:

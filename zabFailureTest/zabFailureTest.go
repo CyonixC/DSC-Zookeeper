@@ -24,8 +24,10 @@ func randomPassFail(proposed []byte) ([]byte, error) {
 func main() {
 	handler := logger.NewColouredTextHandler(slog.LevelDebug)
 	logger.InitLogger(slog.New(handler))
+	time.Sleep(time.Second)
 	recv, failed := connectionManager.Init()
 	success, rejected := proposals.Init(recv, randomPassFail)
+	time.Sleep(time.Second)
 
 	go func() {
 		for f := range failed {
