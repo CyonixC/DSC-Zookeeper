@@ -43,7 +43,7 @@ func Init() (receiveChannel chan NetworkMessage, failedSends chan string) {
 	newWriteChan = make(chan NamedConnection, 10)
 
 	// This channel is used to receive from external nodes
-	receiveChannel = make(chan NetworkMessage, 10)
+	receiveChannel = make(chan NetworkMessage, 100)
 
 	// The ID of any machine which this node failed to send to is sent on this channel.
 	// This failure should be handled by external code.
@@ -141,14 +141,18 @@ func ServerBroadcast(toSend []byte) {
 	logger.Debug("Broadcasting message to servers...")
 	ipToConnectionWrite.RLock()
 	defer ipToConnectionWrite.RUnlock()
+	var wg sync.WaitGroup
 	for _, name := range configReader.GetConfig().Servers {
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			err := SendMessage(NetworkMessage{name, toSend})
 			if err != nil {
 				logger.Error(fmt.Sprint("Error in server broadcast:", err))
 			}
 		}()
 	}
+	wg.Wait()
 }
 
 // Start listening on a TCP socket. The port number is in config.go.
@@ -210,7 +214,7 @@ func startReceiving(recv_channel chan NetworkMessage, connection net.Conn) {
 		if err != nil {
 			logger.Fatal(fmt.Sprint("Could not convert received message to JSON: ", string(msg[:len(msg)-1])))
 		}
-		go func() { recv_channel <- ret }()
+		recv_channel <- ret
 	}
 }
 
@@ -309,6 +313,11 @@ func attemptConnection(serverName string, successChan chan NamedConnection) bool
 		return false
 	}
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Warn("Succeeded but channel is closed: ", r)
+			}
+		}()
 		successChan <- NamedConnection{
 			Remote:     serverName,
 			Connection: conn,
@@ -327,12 +336,12 @@ func writeConnectionManager(newConnectionChan chan NamedConnection) {
 		// A new connection has come in. If we already have a connection to this node, close the old one and replace it.
 		conn, ok := ipToConnectionWrite.load(newConnection.Remote)
 		if ok {
-			logger.Info(fmt.Sprint("Connection to ", newConnection.Remote, " already exists; overwriting it"))
+			logger.Debug(fmt.Sprint("Connection to ", newConnection.Remote, " already exists; overwriting it"))
 			ipToConnectionWrite.store(newConnection.Remote, newConnection.Connection)
 			conn.Close()
 		} else {
 			// Store the new connection
-			logger.Info(fmt.Sprint("Stored a new write connection to ", newConnection.Remote, ", ", newConnection.Connection.RemoteAddr()))
+			logger.Debug(fmt.Sprint("Stored a new write connection to ", newConnection.Remote, ", ", newConnection.Connection.RemoteAddr()))
 			ipToConnectionWrite.store(newConnection.Remote, newConnection.Connection)
 		}
 	}
