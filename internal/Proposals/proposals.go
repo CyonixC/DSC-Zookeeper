@@ -22,7 +22,7 @@ var proposalsQueue SafeQueue[Proposal]
 var syncTrack SyncTracker
 
 var newProposalChan = make(chan Proposal, 10)
-var toCommitChan = make(chan []byte, 10)
+var toCommitChan = make(chan Request, 10)
 var toSendChan = make(chan ToSendMessage, 10)
 var failedRequestChan = make(chan Request)
 
@@ -34,7 +34,7 @@ var requestChecker checkFunction
 // - A channel which NetworkMessages arrive on from the network
 // - A "check" function which takes in data in a proposal and returns modified data to be used. This function returns an error if
 // the check fails.
-func Init(networkChannel chan cxn.NetworkMessage, check checkFunction) (committed chan []byte, denied chan Request) {
+func Init(networkChannel chan cxn.NetworkMessage, check checkFunction) (committed chan Request, denied chan Request) {
 	go proposalWriter(newProposalChan)
 	go messageSender(toSendChan)
 	go messageReceiver(networkChannel)
@@ -59,7 +59,7 @@ func SendWriteRequest(content []byte, requestNum int) {
 func processZabMessage(netMsg cxn.NetworkMessage) {
 	src := netMsg.Remote
 	msgSerial := netMsg.Message
-	
+
 	var msg ZabMessage
 	err := deserialise(msgSerial, &msg)
 	if err != nil {
@@ -243,11 +243,20 @@ func processRequest(req Request, remoteID string) error {
 		epoch, count := ZxidCounter.incCount()
 		zxid := getZXIDAsInt(epoch, count)
 		ackCounter.storeNew(zxid)
+		newReq := Request{
+			ReqType:   req.ReqType,
+			ReqNumber: req.ReqNumber,
+			Content:   updatedReq,
+		}
+		newReqJson, err := json.Marshal(newReq)
+		if err != nil {
+			logger.Fatal(fmt.Sprint("Error marshaling request ", err))
+		}
 		prop := Proposal{
 			StateChange,
 			epoch,
 			count,
-			updatedReq,
+			newReqJson,
 		}
 		proposalsQueue.enqueue(prop)
 		logger.Debug(fmt.Sprint("Request processed successfully, broadcasting as Proposal #", zxid))
@@ -269,7 +278,7 @@ func processRequest(req Request, remoteID string) error {
 			for epoch := sentEpoch; epoch < highestEpoch; epoch++ {
 				numProposals, err := getEpochHighestCount(epoch)
 				if err != nil {
-					logger.Error(fmt.Sprint("Failed to read proposals from proposal store ", err))
+					logger.Error(fmt.Sprint("Failed to get ZXID from proposal store ", err))
 					replySyncRequestError(req, remoteID)
 				}
 
@@ -394,7 +403,12 @@ func queueWriteProposal(prop Proposal) {
 }
 
 func queueCommitProposal(prop Proposal) {
-	toCommitChan <- prop.Content
+	var committedRequest Request
+	err := deserialise(prop.Content, &committedRequest)
+	if err != nil {
+		logger.Error(fmt.Sprint("Failed to convert committed proposal content to request: ", err))
+	}
+	toCommitChan <- committedRequest
 }
 
 // Send a Zab message over the network.
