@@ -37,7 +37,7 @@ func main() {
 
 	go func() {
 		for s := range success {
-			logger.Info(fmt.Sprint("Succeeded: ", string(s)))
+			logger.Info(fmt.Sprint("Succeeded: ", string(s.Content)))
 		}
 	}()
 
