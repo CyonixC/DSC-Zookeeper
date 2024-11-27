@@ -2,52 +2,31 @@ package main
 
 import (
 	connectionManager "local/zookeeper/internal/ConnectionManager"
-	configReader "local/zookeeper/internal/ConfigReader"
 	"local/zookeeper/internal/logger"
-	"time"
+	//"time"
 	"fmt"
 	"encoding/json"
 	"strings"
-	"local/zookeeper/election"
+	"local/zookeeper/internal/znode"
+	"local/zookeeper/internal/Proposals"
+	// "math/rand"
+	// "strconv"
 )
+
+var pending_requests []int
 
 // Main entry for server
 func ServerMain() {
 	recv, _ := connectionManager.Init()
+	_, _ = proposals.Init(recv, znode.Check)
 
 	//Listener
-	//go serverlistener(recv)
-
+	go clientListener(recv)
+	// go committedListener(committed)
+	// go deniedListener(denied)
+	
 	//Heartbeat
-	//go serverHeartbeat()
-
-	//Election
-	my_address := configReader.GetName()
-	ringStruct, failedChan := election.ElectionInit(config.Servers, my_address)
-
-	timeoutDuration := 1 * time.Second
-	timeoutTimer := time.NewTimer(timeoutDuration)
-
-	for {
-		select {
-		case receivedMsg := <-recv:
-			fmt.Printf("Received Message %s", my_address)
-			timeoutTimer.Reset(timeoutDuration)
-
-			var messageWrapper election.MessageWrapper
-			err := json.Unmarshal(receivedMsg.Message, &messageWrapper)
-			if err != nil {
-				logger.Fatal(fmt.Sprint("Error unmarshalling message:", err))
-			}
-			election.HandleMessage(my_address, ringStruct, failedChan, messageWrapper)
-
-		case <-timeoutTimer.C: // Timeout occurred
-			fmt.Println("Timeout occurred. Initiating election.")
-			election.InitiateElectionDiscovery(my_address, ringStruct, failedChan)
-
-			timeoutTimer.Reset(timeoutDuration)
-		}
-	}
+	go serverHeartbeat()
 }
 
 // Send unstrctured data to a client
@@ -70,8 +49,8 @@ func SendJSONMessageToClient(jsonData interface{}, client string) error{
 	return nil
 }
 
-// Listen for messages
-func serverlistener(recv_channel chan connectionManager.NetworkMessage) {
+// Listen for messages from client
+func clientListener(recv_channel chan connectionManager.NetworkMessage) {
 	for network_msg := range recv_channel {
 		logger.Info(fmt.Sprint("Receive message from ", network_msg.Remote))
 
@@ -86,25 +65,45 @@ func serverlistener(recv_channel chan connectionManager.NetworkMessage) {
 			logger.Info(fmt.Sprint("Map Data: ", message))
 
 			// Type assertion to work with the data
-			items := message.([]interface{})
-			for _, item := range items {
-				obj := item.(map[string]interface{})
-				switch obj["message"] {
-				case "START_SESSION":
-					// Return a new session ID
-				case "REESTABLISH_SESSION":
-					// Check if session ID exist, return success if it is, else return failure with new ID.
-				}
+			obj := message.(map[string]interface{})
+			switch obj["message"] {
+			case "START_SESSION":
+				// var new_session_id string
+				// //generate random id and check if it does not exist
+				// for { 
+				// 	new_session_id := strconv.Itoa(rand.Intn(10000000))
+				// 	if !znode.Exists_session(new_session_id) { break }
+				// }
+				// data, _ := znode.Encode_create_session(new_session_id, 2)
+
+				// new_req_id := rand.Intn(10000000) 
+				// //proposals.SendWriteRequest(data, new_req_id)
+				// pending_requests = append(pending_requests, new_req_id)
+
+			case "REESTABLISH_SESSION":
+				// Check if session ID exist, return success if it is, else return failure with new ID.
 			}
 		}
 	}
 }
 
+// func committedListener(committed_channel chan []byte) {
+// 	for msg := range committed_channel {
+
+// 	}
+// }
+
+// func deniedListener(denied_channel chan proposals.Request) {
+// 	for msg := range denied_channel {
+
+// 	}
+// }
+
 // Heartbeat the leader every x seconds
 func serverHeartbeat() {
-	for {
-		time.Sleep(time.Second * time.Duration(3))
-		data := []byte("HEARTBEAT")
-		connectionManager.ServerBroadcast(data)
-	}
+	// for {
+	// 	time.Sleep(time.Second * time.Duration(3))
+	// 	data := []byte("HEARTBEAT")
+	// 	connectionManager.ServerBroadcast(data)
+	// }
 }

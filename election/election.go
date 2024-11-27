@@ -3,13 +3,14 @@ package election
 import (
 	"encoding/json"
 	"fmt"
+	configReader "local/zookeeper/internal/ConfigReader"
 	connectionManager "local/zookeeper/internal/ConnectionManager"
 	"local/zookeeper/internal/logger"
 	"slices"
 	"sync"
 )
 type MessageType int
-var addresses = []string{"server1", "server2", "server3", "server4"}
+var addresses []string
 var mu sync.Mutex
 
 const (
@@ -66,6 +67,7 @@ func StartRingMessage(nodeIP string, ring_structure []string, messageContent []s
 
 
 func InitiateElectionDiscovery(nodeIP string,  failedchan chan string) {
+    addresses = configReader.GetConfig().Servers
     fmt.Print("addressess %v", addresses)
     initRing:=ReorderRing(addresses,nodeIP)
     logger.Info(fmt.Sprintf("Node %s initiated election discovery\n", nodeIP))

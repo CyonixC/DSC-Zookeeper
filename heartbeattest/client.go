@@ -20,13 +20,13 @@ func ClientMain() {
 	sessionID = -1 //Initialize as -1 representing no session ID
 
 	//Main Listener
-	go clientListener(recv)
+	go listener(recv)
 
 	//Look for available servers
 	findLiveServer()
 
 	//Start Heartbeat
-	go clientHeartbeat()
+	go heartbeat()
 
 	//Main loop
 	scanner := bufio.NewScanner(os.Stdin)
@@ -45,7 +45,7 @@ func ClientMain() {
 }
 
 // Send unstrctured data to the connected server
-func SendJSONMessage(jsonData interface{}, server string) error{
+func SendJSONMessage(jsonData interface{}, server string) error {
 	logger.Info(fmt.Sprint("Sending message: ", jsonData))
 	// Convert to JSON ([]byte)
 	byteData, err := json.Marshal(jsonData)
@@ -65,7 +65,7 @@ func SendJSONMessage(jsonData interface{}, server string) error{
 }
 
 // Main listener for all messages set from server
-func clientListener(recv_channel chan connectionManager.NetworkMessage) {
+func listener(recv_channel chan connectionManager.NetworkMessage) {
 	for network_msg := range recv_channel {
 		logger.Info(fmt.Sprint("Receive message from ", network_msg.Remote))
 		var message interface{}
@@ -75,6 +75,17 @@ func clientListener(recv_channel chan connectionManager.NetworkMessage) {
 			return
 		}
 		logger.Info(fmt.Sprint("Map Data: ", message))
+
+		// Type assertion to work with the data
+		obj := message.(map[string]interface{})
+		switch obj["message"] {
+		case "START_SESSION_OK":
+			// Store the new ID
+		case "REESTABLISH_SESSION_OK":
+			// OK
+		case "REESTABLISH_SESSION_REJECT":
+			// Store the new ID
+		}
 	}
 }
 
@@ -109,7 +120,7 @@ func findLiveServer() bool {
 }
 
 // Heartbeat the server every x seconds and attempts reconnect if message fails to send
-func clientHeartbeat() {
+func heartbeat() {
 	for {
 		time.Sleep(time.Second * time.Duration(2))
 		var msg interface{} = map[string]interface{}{

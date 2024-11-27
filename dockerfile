@@ -25,6 +25,6 @@ EXPOSE 8080
 COPY config.json ./
 
 FROM build-stage AS compile-stage
-RUN CGO_ENABLED=0 GOOS=linux go build -o ./go-main ./electiontest/
+RUN CGO_ENABLED=0 GOOS=linux go build -o ./go-main ./heartbeattest/
 # Run
 CMD ["./go-main"]

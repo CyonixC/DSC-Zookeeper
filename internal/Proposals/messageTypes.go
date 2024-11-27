@@ -3,8 +3,6 @@ package proposals
 import (
 	"encoding/binary"
 	"encoding/json"
-	"log"
-	"reflect"
 )
 
 // This file contains struct definitions for handling all messages exchanged in the Zab protocol.
@@ -87,11 +85,12 @@ type Deserialisable interface {
 }
 
 // Un-JSON-ify a JSON data slice into a Zab message type.
-func deserialise[m Deserialisable](serialised []byte, msgPtr *m) {
+func deserialise[m Deserialisable](serialised []byte, msgPtr *m) error {
 	err := json.Unmarshal(serialised, msgPtr)
 	if err != nil {
-		log.Fatal("Could not convert ", reflect.TypeOf(msgPtr), " from bytes: ", err)
+		return err
 	}
+	return nil
 }
 
 // Convert the epoch and count numbers to a single zxid

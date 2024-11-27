@@ -23,30 +23,18 @@ services:
       - app-network
     container_name: server2
 
-  server3:
+  client1:
     build:
       context: .
     environment:
-      - MODE=Server
-      - NAME=server3
+      - MODE=Client
+      - NAME=client1
     ports:
       - "8083:8080"
     networks:
       - app-network
-    container_name: server3
-  server4:
-    build:
-      context: .
-    environment:
-      - MODE=Server
-      - NAME=server4
-    ports:
-      - "8084:8080"
-    networks:
-      - app-network
-    container_name: server4
-    # stdin_open: true
-
+    container_name: client1
+    stdin_open: true
 
 networks:
   app-network:

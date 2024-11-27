@@ -59,8 +59,13 @@ func SendWriteRequest(content []byte, requestNum int) {
 func processZabMessage(netMsg cxn.NetworkMessage) {
 	src := netMsg.Remote
 	msgSerial := netMsg.Message
+	
 	var msg ZabMessage
-	deserialise(msgSerial, &msg)
+	err := deserialise(msgSerial, &msg)
+	if err != nil {
+		logger.Debug("Not a ZabMessage")
+		return
+	}
 
 	switch msg.ZabType {
 	case Req:
