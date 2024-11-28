@@ -8,7 +8,6 @@ import (
 	"local/zookeeper/internal/logger"
 	"os"
 	"strings"
-	"time"
 )
 
 var connectedServer string
@@ -16,7 +15,8 @@ var sessionID string
 
 // Main entry for client
 func ClientMain() {
-	recv, _ := connectionManager.Init()
+	recv, failedSends := connectionManager.Init()
+	go monitorConnection(failedSends)
 
 	//Main Listener
 	go listener(recv)
@@ -28,17 +28,31 @@ func ClientMain() {
 		command := strings.TrimSpace(scanner.Text())
 		switch command {
 		case "startsession":
-			//Look for available servers
+			//Look for available servers and connect to one
 			findLiveServer()
 
 		case "endsession":
-			continue
+			if connectedServer == "" {
+				fmt.Println("Error: Session has not started")
+				continue
+			}
+			msg := map[string]interface{}{
+				"message": "END_SESSION",
+				"session_id": sessionID,
+			}
+			SendJSONMessage(msg, connectedServer)
 
 		case "publish":
-			continue
+			if connectedServer == "" {
+				fmt.Println("Error: Session has not started")
+				continue
+			}
 
 		case "subscribe":
-			continue
+			if connectedServer == "" {
+				fmt.Println("Error: Session has not started")
+				continue
+			}
 
 		default:
 			fmt.Printf("Unknown command: %s\n", command)
@@ -124,27 +138,13 @@ func findLiveServer() bool {
 }
 
 // Monitor TCP connection
-func heartbeat() {
-	for {
-		time.Sleep(time.Second * time.Duration(2))
-		var msg interface{} = map[string]interface{}{
-			"message": "HEARTBEAT",
-		}
-		if connectedServer != "" {
-			err := SendJSONMessage(msg, connectedServer)
-			if err != nil {
-				logger.Error("Heartbeat failed to send: " + err.Error())
-				connectedServer = ""
-				for {
-					logger.Info("Attempting to reconnect to a new server")
-					success := findLiveServer() //Find a new server when heartbeat fails
-					if success {
-						break
-					}
-				}
-			} else {
-				logger.Info("Heartbeat sent to server: " + connectedServer)
-			}
+func monitorConnection(failedSends chan string) {
+	for msg := range failedSends {
+		if msg == connectedServer {
+			logger.Error(fmt.Sprint("TCP connection to connected server failed: ", msg))
+			connectedServer = ""
+			logger.Info("Attempting to reconnect to a new server")
+			findLiveServer()
 		}
 	}
 }

@@ -57,7 +57,7 @@ func SendJSONMessageToClient(jsonData interface{}, client string) error {
 	return nil
 }
 
-// Listen for messages from client
+// Listen for messages
 func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 	for network_msg := range recv_channel {
 		logger.Info(fmt.Sprint("Receive message from ", network_msg.Remote))
