@@ -1,4 +1,4 @@
 {
-    "servers": [ "server1", "server2" ],
+    "servers": [ "server2", "server1" ],
     "clients": [ "client1" ]
 }

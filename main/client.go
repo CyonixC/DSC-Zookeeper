@@ -12,12 +12,11 @@ import (
 )
 
 var connectedServer string
-var sessionID int
+var sessionID string
 
 // Main entry for client
 func ClientMain() {
 	recv, _ := connectionManager.Init()
-	sessionID = -1 //Initialize as -1 representing no session ID
 
 	//Main Listener
 	go listener(recv)
@@ -26,7 +25,7 @@ func ClientMain() {
 	findLiveServer()
 
 	//Start Heartbeat
-	go heartbeat()
+	// go heartbeat()
 
 	//Main loop
 	scanner := bufio.NewScanner(os.Stdin)
@@ -34,7 +33,13 @@ func ClientMain() {
 		scanner.Scan()
 		command := strings.TrimSpace(scanner.Text())
 		switch command {
-		case "":
+		case "create":
+			continue
+
+		case "delete":
+			continue
+
+		case "set":
 			continue
 
 		default:
@@ -81,6 +86,7 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 		switch obj["message"] {
 		case "START_SESSION_OK":
 			// Store the new ID
+			sessionID = obj["session_id"].(string)
 		case "REESTABLISH_SESSION_OK":
 			// OK
 		case "REESTABLISH_SESSION_REJECT":
@@ -96,7 +102,7 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 func findLiveServer() bool {
 	for server := range config.Servers {
 		var msg interface{}
-		if sessionID == -1 {
+		if sessionID == "" {
 			msg = map[string]interface{}{
 				"message": "START_SESSION",
 			}
@@ -120,6 +126,7 @@ func findLiveServer() bool {
 }
 
 // Heartbeat the server every x seconds and attempts reconnect if message fails to send
+// TODO replace with monitoring TCP connection
 func heartbeat() {
 	for {
 		time.Sleep(time.Second * time.Duration(2))

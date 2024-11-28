@@ -34,10 +34,9 @@ var requestChecker checkFunction
 // - A channel which NetworkMessages arrive on from the network
 // - A "check" function which takes in data in a proposal and returns modified data to be used. This function returns an error if
 // the check fails.
-func Init(networkChannel chan cxn.NetworkMessage, check checkFunction) (committed chan Request, denied chan Request) {
+func Init(check checkFunction) (committed chan Request, denied chan Request) {
 	go proposalWriter(newProposalChan)
 	go messageSender(toSendChan)
-	go messageReceiver(networkChannel)
 	n_systems = len(configReader.GetConfig().Servers)
 	committed = toCommitChan
 	requestChecker = check
@@ -56,7 +55,8 @@ func SendWriteRequest(content []byte, requestNum int) {
 }
 
 // Process a Zab message received from the network.
-func processZabMessage(netMsg cxn.NetworkMessage) {
+func ProcessZabMessage(netMsg cxn.NetworkMessage) {
+	logger.Debug("Received ZabMessage")
 	src := netMsg.Remote
 	msgSerial := netMsg.Message
 
