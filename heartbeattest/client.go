@@ -16,9 +16,7 @@ var sessionID int
 
 // Main entry for client
 func ClientMain() {
-	time.Sleep(time.Second)
 	recv, _ := connectionManager.Init()
-	time.Sleep(time.Second)
 	sessionID = -1 //Initialize as -1 representing no session ID
 
 	//Main Listener
@@ -122,6 +120,7 @@ func findLiveServer() bool {
 }
 
 // Heartbeat the server every x seconds and attempts reconnect if message fails to send
+// TODO replace with monitoring TCP connection
 func heartbeat() {
 	for {
 		time.Sleep(time.Second * time.Duration(2))

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	connectionManager "local/zookeeper/internal/ConnectionManager"
+	configReader "local/zookeeper/internal/ConfigReader"
 	proposals "local/zookeeper/internal/Proposals"
 	"local/zookeeper/internal/logger"
 	"local/zookeeper/internal/znode"
@@ -13,17 +14,21 @@ import (
 	"time"
 )
 
-var pending_requests []int
+var pending_requests map[int]connectionManager.NetworkMessage //Map request IDs to the original message sent by client
 
 // Main entry for server
 func ServerMain() {
-	time.Sleep(time.Second)
+	pending_requests = make((map[int]connectionManager.NetworkMessage))
+
 	recv, _ := connectionManager.Init()
-	time.Sleep(time.Second)
-	
 	committed, denied := proposals.Init(znode.Check)
 
-	//Listener
+	//TODO call election instead
+	//if configReader.GetName() == "server1" {
+		znode.Init_znode_cache()
+	//}
+
+	//Listeners
 	go clientListener(recv)
 	go committedListener(committed)
 	go deniedListener(denied)
@@ -72,7 +77,7 @@ func clientListener(recv_channel chan connectionManager.NetworkMessage) {
 			switch obj["message"] {
 			case "START_SESSION":
 				var new_session_id string
-				//generate random id and check if it does not exist
+				//Generate random session id and check if it does not exist
 				for {
 					new_session_id = strconv.Itoa(rand.Intn(10000000))
 					if !znode.Exists_session(new_session_id) {
@@ -82,9 +87,11 @@ func clientListener(recv_channel chan connectionManager.NetworkMessage) {
 
 				logger.Info(fmt.Sprint("Sending session write request: ", new_session_id, " to leader"))
 				data, _ := znode.Encode_create_session(new_session_id, 2)
-				new_req_id := rand.Intn(10000000)
+
+				//Generate a request ID, send the request, and add it to pending_requests
+				new_req_id := generateUniqueRequestID()
 				proposals.SendWriteRequest(data, new_req_id)
-				pending_requests = append(pending_requests, new_req_id)
+				pending_requests[new_req_id] = network_msg
 
 			case "REESTABLISH_SESSION":
 				// Check if session ID exist, return success if it is, else return failure with new ID.
@@ -96,15 +103,77 @@ func clientListener(recv_channel chan connectionManager.NetworkMessage) {
 	}
 }
 
+//Generate a random unique request ID
+//Ensuring that different servers cannot generate the same ID by prepending with server number
+func generateUniqueRequestID() int {
+	server_name := configReader.GetName()
+	lastDigit := rune(server_name[len(server_name)-1])
+	server_number, _ := strconv.Atoi(string(lastDigit))
+
+	var new_req_id int
+	for {
+		new_req_id = server_number*1000000000 + rand.Intn(10000000) 
+		_, exists := pending_requests[new_req_id]
+		if !exists {
+			return new_req_id
+		}
+	}
+}
+
 func committedListener(committed_channel chan proposals.Request) {
-	for _ = range committed_channel {
-		logger.Info(fmt.Sprint("Receive commit message"))
+	for request := range committed_channel {
+		logger.Info(fmt.Sprint("Receive commit ", request.ReqNumber, ": Type ", request.ReqType))
+		modified_paths, err := znode.Write(request.Content)
+		if err != nil {
+			logger.Error(fmt.Sprint("Error when attempting to commit: ", err.Error()))
+			return
+		}
+
+		//If it's my client, remove from pending_requests and reply to client
+		original_message, exists := pending_requests[request.ReqNumber]
+		if exists {
+			var message interface{}
+			json.Unmarshal([]byte(original_message.Message), &message)
+			var reply_msg interface{}
+			obj := message.(map[string]interface{})
+				switch obj["message"] {
+				case "START_SESSION":
+					//Get session ID from filepath
+					segments := strings.Split(modified_paths[0], "/")
+					session_id := segments[len(segments)-1]
+					reply_msg = map[string]interface{}{
+						"message": "START_SESSION_OK",
+						"session_id": session_id,
+					}
+				}
+
+			SendJSONMessageToClient(reply_msg, pending_requests[request.ReqNumber].Remote)
+			delete(pending_requests, request.ReqNumber)
+		}
 	}
 }
 
 func deniedListener(denied_channel chan proposals.Request) {
-	for _ = range denied_channel {
-		logger.Info(fmt.Sprint("Receive denied message"))
+	for request := range denied_channel {
+		logger.Info(fmt.Sprint("Receive denied ", request.ReqNumber, ": Type ", request.ReqType))
+
+		//If it's my client, remove from pending_requests and reply to client
+		original_message, exists := pending_requests[request.ReqNumber]
+		if exists {
+			var message interface{}
+			json.Unmarshal([]byte(original_message.Message), &message)
+			var reply_msg interface{}
+			obj := message.(map[string]interface{})
+				switch obj["message"] {
+				case "START_SESSION":
+					reply_msg = map[string]interface{}{
+						"message": "START_SESSION_REJECT",
+					}
+				}
+
+			SendJSONMessageToClient(reply_msg, pending_requests[request.ReqNumber].Remote)
+			delete(pending_requests, request.ReqNumber)
+		}
 	}
 }
 
