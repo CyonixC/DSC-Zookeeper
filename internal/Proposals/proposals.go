@@ -431,5 +431,5 @@ func broadcastZabMessage(msg ZabMessage) {
 		log.Fatal(err)
 		return
 	}
-	cxn.Broadcast(serial)
+	cxn.ServerBroadcast(serial)
 }
