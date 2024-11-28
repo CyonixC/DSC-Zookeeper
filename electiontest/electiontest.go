@@ -3,21 +3,20 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"local/zookeeper/election"
 	configReader "local/zookeeper/internal/ConfigReader"
 	connectionManager "local/zookeeper/internal/ConnectionManager"
+	"local/zookeeper/internal/election"
 	"local/zookeeper/internal/logger"
 	"log/slog"
 	"os"
 	"time"
 )
 var config configReader.Config
-var addresses = []string{"server1", "server2", "server3", "server4"}
 
 func main() {
 	mode := os.Getenv("MODE") // "Server" or "Client"
 	handler := logger.NewPlainTextHandler(slog.LevelDebug)
-	logger.InitLogger(slog.New(handler))
+	logger.InitLogger(slog.New(handler)) 
 	if mode == "Server" {
 		logger.Info("Server starting...")
 		go client(os.Getenv("NAME"))
@@ -27,11 +26,12 @@ func main() {
 
 func client(address string) {
 	recv, failedchan := connectionManager.Init()
-
 	timeoutDuration := 10 * time.Second
 	timeoutTimer := time.NewTimer(timeoutDuration)
+	election.ElectionInit()
 	if address=="server1"{
-		election.InitiateElectionDiscovery(address, failedchan)
+		
+		election.InitiateElectionDiscovery()
 	}
 	for {
 		select {
@@ -43,10 +43,17 @@ func client(address string) {
 			if err != nil {
 				logger.Fatal(fmt.Sprint("Error unmarshalling message:", err))
 			}
-			election.HandleMessage(address, failedchan, messageWrapper)
+			electionstatus:=election.HandleMessage(address, failedchan, messageWrapper)
+			if electionstatus {
+				fmt.Print("beep")
+			}
+			{
+				fmt.Print("boop")
+			}
 		case <-timeoutTimer.C: 
 			fmt.Println("Timeout occurred. Initiating election.")
-			election.InitiateElectionDiscovery(address, failedchan)
+			
+			election.InitiateElectionDiscovery()
 			timeoutTimer.Reset(timeoutDuration)
 		}
 	}
