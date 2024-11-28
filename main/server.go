@@ -24,12 +24,12 @@ func ServerMain() {
 	committed, denied := proposals.Init(znode.Check)
 
 	//TODO call election instead
-	//if configReader.GetName() == "server1" {
+	if configReader.GetName() == "server1" {
 		znode.Init_znode_cache()
-	//}
+	}
 
 	//Listeners
-	go clientListener(recv)
+	go mainListener(recv)
 	go committedListener(committed)
 	go deniedListener(denied)
 
@@ -58,7 +58,7 @@ func SendJSONMessageToClient(jsonData interface{}, client string) error {
 }
 
 // Listen for messages from client
-func clientListener(recv_channel chan connectionManager.NetworkMessage) {
+func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 	for network_msg := range recv_channel {
 		logger.Info(fmt.Sprint("Receive message from ", network_msg.Remote))
 

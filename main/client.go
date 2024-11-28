@@ -21,30 +21,28 @@ func ClientMain() {
 	//Main Listener
 	go listener(recv)
 
-	//Look for available servers
-	findLiveServer()
-
-	//Start Heartbeat
-	// go heartbeat()
-
 	//Main loop
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
 		scanner.Scan()
 		command := strings.TrimSpace(scanner.Text())
 		switch command {
-		case "create":
+		case "startsession":
+			//Look for available servers
+			findLiveServer()
+
+		case "endsession":
 			continue
 
-		case "delete":
+		case "publish":
 			continue
 
-		case "set":
+		case "subscribe":
 			continue
 
 		default:
 			fmt.Printf("Unknown command: %s\n", command)
-			fmt.Println("Available commands: create, delete, set, exist, get, children, help, exit")
+			fmt.Println("Available commands: startsession, endsession, publish, subscribe")
 		}
 	}
 }
@@ -125,8 +123,7 @@ func findLiveServer() bool {
 	return false
 }
 
-// Heartbeat the server every x seconds and attempts reconnect if message fails to send
-// TODO replace with monitoring TCP connection
+// Monitor TCP connection
 func heartbeat() {
 	for {
 		time.Sleep(time.Second * time.Duration(2))
