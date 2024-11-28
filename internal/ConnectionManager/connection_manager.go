@@ -119,7 +119,7 @@ func SendMessage(toSend NetworkMessage) error {
 }
 
 // Broadcast to all known machines.
-func Broadcast(toSend []byte) {
+func Broadcast(toSend []byte, msgType NetMessageType) {
 	logger.Debug("Broadcasting message...")
 	ipToConnectionWrite.RLock()
 	defer ipToConnectionWrite.RUnlock()
@@ -128,7 +128,7 @@ func Broadcast(toSend []byte) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := SendMessage(NetworkMessage{addr, toSend})
+			err := SendMessage(NetworkMessage{addr, msgType, toSend})
 			if err != nil {
 				logger.Error(fmt.Sprint("Error in broadcast:", err))
 			}
@@ -137,7 +137,7 @@ func Broadcast(toSend []byte) {
 	wg.Wait()
 }
 
-func ServerBroadcast(toSend []byte) {
+func ServerBroadcast(toSend []byte, msgType NetMessageType) {
 	logger.Debug("Broadcasting message to servers...")
 	ipToConnectionWrite.RLock()
 	defer ipToConnectionWrite.RUnlock()
@@ -146,7 +146,7 @@ func ServerBroadcast(toSend []byte) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := SendMessage(NetworkMessage{name, toSend})
+			err := SendMessage(NetworkMessage{name, msgType, toSend})
 			if err != nil {
 				logger.Error(fmt.Sprint("Error in server broadcast:", err))
 			}

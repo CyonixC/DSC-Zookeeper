@@ -36,6 +36,6 @@ func main() {
 
 	for i := 0; ; i++ {
 		time.Sleep(time.Microsecond * 200)
-		connectionManager.Broadcast([]byte(fmt.Sprint("Testing ", i)))
+		connectionManager.Broadcast([]byte(fmt.Sprint("Testing ", i)), connectionManager.CLIENTMSG)
 	}
 }

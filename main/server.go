@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	connectionManager "local/zookeeper/internal/ConnectionManager"
 	configReader "local/zookeeper/internal/ConfigReader"
+	connectionManager "local/zookeeper/internal/ConnectionManager"
 	proposals "local/zookeeper/internal/Proposals"
 	"local/zookeeper/internal/logger"
 	"local/zookeeper/internal/znode"
@@ -14,11 +14,11 @@ import (
 	"time"
 )
 
-//Map request IDs to the original message sent by client
-var pending_requests map[int]connectionManager.NetworkMessage 
+// Map request IDs to the original message sent by client
+var pending_requests map[int]connectionManager.NetworkMessage
 
-//Map clients connected to this server to session IDs.
-//Add to this map when receiving a START_SESSION or REESTABLISH_SESSION, remove from this map on END_SESSION or when detect TCP closed.
+// Map clients connected to this server to session IDs.
+// Add to this map when receiving a START_SESSION or REESTABLISH_SESSION, remove from this map on END_SESSION or when detect TCP closed.
 var local_sessions map[string]string
 
 // Main entry for server
@@ -68,7 +68,7 @@ func SendJSONMessageToClient(jsonData interface{}, client string) error {
 func SendInfoMessageToClient(info string, client string) {
 	reply_msg := map[string]interface{}{
 		"message": "INFO",
-		"info": info,
+		"info":    info,
 	}
 	SendJSONMessageToClient(reply_msg, client)
 }
@@ -111,7 +111,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				if znode.Exists_session(obj["session_id"].(string)) {
 					local_sessions[this_client] = obj["session_id"].(string)
 					reply_msg := map[string]interface{}{
-						"message": "REESTABLISH_SESSION_OK",
+						"message":    "REESTABLISH_SESSION_OK",
 						"session_id": obj["session_id"],
 					}
 					SendJSONMessageToClient(reply_msg, this_client)
@@ -129,11 +129,11 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
-				
+
 				logger.Info(fmt.Sprint("Sending session end request: ", obj["session_id"].(string), " to leader"))
 				generateAndSendRequest(data, network_msg)
 			}
-			
+
 		} else {
 			//Handle messages from other server
 			proposals.ProcessZabMessage(network_msg)
@@ -157,23 +157,23 @@ func committedListener(committed_channel chan proposals.Request) {
 			json.Unmarshal([]byte(original_message.Message), &message)
 			var reply_msg interface{}
 			obj := message.(map[string]interface{})
-				switch obj["message"] {
-				case "START_SESSION":
-					//Get session ID from filepath
-					segments := strings.Split(modified_paths[0], "/")
-					session_id := segments[len(segments)-1]
-					reply_msg = map[string]interface{}{
-						"message": "START_SESSION_OK",
-						"session_id": session_id,
-					}
-					local_sessions[original_message.Remote] = session_id
-
-				case "END_SESSION":
-					reply_msg = map[string]interface{}{
-						"message": "END_SESSION_OK",
-					}
-					delete(local_sessions, original_message.Remote)
+			switch obj["message"] {
+			case "START_SESSION":
+				//Get session ID from filepath
+				segments := strings.Split(modified_paths[0], "/")
+				session_id := segments[len(segments)-1]
+				reply_msg = map[string]interface{}{
+					"message":    "START_SESSION_OK",
+					"session_id": session_id,
 				}
+				local_sessions[original_message.Remote] = session_id
+
+			case "END_SESSION":
+				reply_msg = map[string]interface{}{
+					"message": "END_SESSION_OK",
+				}
+				delete(local_sessions, original_message.Remote)
+			}
 
 			SendJSONMessageToClient(reply_msg, original_message.Remote)
 			delete(pending_requests, request.ReqNumber)
@@ -192,12 +192,12 @@ func deniedListener(denied_channel chan proposals.Request) {
 			json.Unmarshal([]byte(original_message.Message), &message)
 			var reply_msg interface{}
 			obj := message.(map[string]interface{})
-				switch obj["message"] {
-				case "START_SESSION":
-					reply_msg = map[string]interface{}{
-						"message": "START_SESSION_REJECT",
-					}
+			switch obj["message"] {
+			case "START_SESSION":
+				reply_msg = map[string]interface{}{
+					"message": "START_SESSION_REJECT",
 				}
+			}
 
 			SendJSONMessageToClient(reply_msg, pending_requests[request.ReqNumber].Remote)
 			delete(pending_requests, request.ReqNumber)
@@ -205,15 +205,15 @@ func deniedListener(denied_channel chan proposals.Request) {
 	}
 }
 
-//Helper function to generate unique request ID, send request, and append the new request to pending_requests
+// Helper function to generate unique request ID, send request, and append the new request to pending_requests
 func generateAndSendRequest(data []byte, original_message connectionManager.NetworkMessage) {
 	new_req_id := generateUniqueRequestID()
 	proposals.SendWriteRequest(data, new_req_id)
 	pending_requests[new_req_id] = original_message
 }
 
-//Generate a random unique request ID
-//Ensuring that different servers cannot generate the same ID by prepending with server number
+// Generate a random unique request ID
+// Ensuring that different servers cannot generate the same ID by prepending with server number
 func generateUniqueRequestID() int {
 	server_name := configReader.GetName()
 	lastDigit := rune(server_name[len(server_name)-1])
@@ -221,7 +221,7 @@ func generateUniqueRequestID() int {
 
 	var new_req_id int
 	for {
-		new_req_id = server_number*1000000000 + rand.Intn(10000000) 
+		new_req_id = server_number*1000000000 + rand.Intn(10000000)
 		_, exists := pending_requests[new_req_id]
 		if !exists {
 			return new_req_id
@@ -245,6 +245,6 @@ func serverHeartbeat() {
 	for {
 		time.Sleep(time.Second * time.Duration(3))
 		data := []byte("HEARTBEAT")
-		connectionManager.ServerBroadcast(data)
+		connectionManager.ServerBroadcast(data, connectionManager.HEARTBEAT)
 	}
 }

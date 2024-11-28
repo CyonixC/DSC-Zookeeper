@@ -16,6 +16,7 @@ type MessageType int
 var addresses []string = configReader.GetConfig().Servers
 var mu sync.Mutex
 var Coordinator string
+
 const (
 	MessageTypeDiscovery = iota
 	MessageTypeAnnouncement
@@ -27,7 +28,7 @@ type MessageWrapper struct {
 	Message_Type  MessageType
 	Source        string
 	Visited_Nodes []string
-	ZxId_List []uint32
+	ZxId_List     []uint32
 	Payload       []string
 }
 
@@ -35,7 +36,7 @@ func ReorderRing(ring_structure []string, id string) []string {
 	startIndex := slices.Index(ring_structure, id)
 	if startIndex == -1 {
 		fmt.Println("Error: id not found in ring_structure")
-		return ring_structure 
+		return ring_structure
 	}
 	afterStart := ring_structure[startIndex+1:]
 	beforeStart := ring_structure[:startIndex]
@@ -47,8 +48,8 @@ func ReorderRing(ring_structure []string, id string) []string {
 func SendRingAnnouncement(ring []string, content []string, messageType MessageType) {
 	StartRingMessage(ring, content, messageType)
 }
-func StartRingMessage( ring_structure []string, messageContent []string, messageType MessageType) {
-	nodeIP:= configReader.GetName()
+func StartRingMessage(ring_structure []string, messageContent []string, messageType MessageType) {
+	nodeIP := configReader.GetName()
 	visitedNodes := make([]string, 0, len(ring_structure))
 	visitedNodes = append(visitedNodes, nodeIP)
 	zxidList := make([]uint32, 0, len(ring_structure))
@@ -63,7 +64,6 @@ func StartRingMessage( ring_structure []string, messageContent []string, message
 	go DispatchMessage(ring_structure, message)
 }
 
-   
 func Pass_message_down_ring(ring_structure []string, message MessageWrapper) bool {
 	id := configReader.GetName()
 	if slices.Contains(message.Visited_Nodes, id) {
@@ -88,7 +88,7 @@ func DispatchMessage(ring_structure []string, message_cont MessageWrapper) {
 	}
 loop:
 	for _, target := range ring_structure {
-		err := connectionManager.SendMessage(connectionManager.NetworkMessage{Remote: target, Message: messageBytes})
+		err := connectionManager.SendMessage(connectionManager.NetworkMessage{Remote: target, Type: connectionManager.ELECTION, Message: messageBytes})
 		if err != nil {
 			logger.Info(fmt.Sprintf("Failed to send message to %v; retrying with next target", target))
 			fmt.Printf("Error: %v\n", err)
@@ -106,8 +106,8 @@ func getCorrespondingValue(numArray []uint32, charArray []string) string {
 
 	maxIndex := 0
 	for i := 1; i < len(numArray); i++ {
-		if numArray[i] > numArray[maxIndex] || 
-		   (numArray[i] == numArray[maxIndex] && charArray[i] > charArray[maxIndex]) {
+		if numArray[i] > numArray[maxIndex] ||
+			(numArray[i] == numArray[maxIndex] && charArray[i] > charArray[maxIndex]) {
 			maxIndex = i
 		}
 	}
@@ -120,12 +120,12 @@ func HandleDiscoveryMessage(ring_structure []string, message MessageWrapper, fai
 	isComplete := Pass_message_down_ring(ring_structure, message)
 	if isComplete {
 		logger.Info(fmt.Sprintf("Completed Discovery in %s: %v", nodeIP, message.Visited_Nodes))
-		if len(message.Visited_Nodes) >= len(addresses)/2{
+		if len(message.Visited_Nodes) >= len(addresses)/2 {
 			electedCoordinator := getCorrespondingValue(message.ZxId_List, message.Visited_Nodes)
 			logger.Info(fmt.Sprintf("New Coordinator: %v", electedCoordinator))
 			ring_struct := ReorderRing(message.Visited_Nodes, nodeIP)
 			go SendRingAnnouncement(ring_struct, []string{electedCoordinator}, MessageTypeAnnouncement)
-		} else{
+		} else {
 			logger.Error(fmt.Sprint("No enough majority votes dk why teehee"))
 		}
 
@@ -139,6 +139,7 @@ func InitiateElectionDiscovery() {
 	StartRingMessage(initRing, initialContent, MessageTypeDiscovery)
 
 }
+
 // Processes an announcement message and initiates a new ring announcement if the election finishes.
 func HandleAnnouncementMessage(ring []string, message MessageWrapper, failedchan chan string) string {
 	isComplete := Pass_message_down_ring(ring, message)
@@ -154,7 +155,7 @@ func HandleNewRingMessage(ring_structure []string, message MessageWrapper, id st
 	return message.Payload
 }
 func HandleMessage(nodeIP string, failedChan chan string, messageWrapper MessageWrapper) bool {
-	
+
 	switch messageWrapper.Message_Type {
 	case MessageTypeDiscovery:
 		ring_structure := ReorderRing(addresses, nodeIP)
@@ -176,7 +177,6 @@ func HandleMessage(nodeIP string, failedChan chan string, messageWrapper Message
 	}
 }
 
-func ElectionInit() (){
+func ElectionInit() {
 	addresses = configReader.GetConfig().Servers
 }
-

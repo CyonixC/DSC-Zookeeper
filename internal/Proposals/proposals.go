@@ -418,7 +418,7 @@ func sendZabMessage(dest string, msg ZabMessage) {
 		log.Fatal(err)
 	}
 
-	err = cxn.SendMessage(cxn.NetworkMessage{Remote: dest, Message: serial})
+	err = cxn.SendMessage(cxn.NetworkMessage{Remote: dest, Type: cxn.ZAB, Message: serial})
 	if err != nil {
 		logger.Error(fmt.Sprint("Could not send message to ", dest, ":", err))
 	}
@@ -431,5 +431,5 @@ func broadcastZabMessage(msg ZabMessage) {
 		log.Fatal(err)
 		return
 	}
-	cxn.ServerBroadcast(serial)
+	cxn.ServerBroadcast(serial, cxn.ZAB)
 }
