@@ -25,7 +25,7 @@ func Write(data []byte) ([]string, error) {
 		// update parent znode children
 		parentpath := filepath.Dir(req.Znode.Path)
 		// if is base of znodedir, ensure base znode exists in case of this being the first znode created
-		if parentpath == "." {
+		if parentpath == "." || parentpath == sessionDir {
 			if !existsZnode(".") {
 				_, _, err := init_base_znode()
 				if err != nil {
