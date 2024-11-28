@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"local/zookeeper/election"
+	"local/zookeeper/internal/election"
 	configReader "local/zookeeper/internal/ConfigReader"
 	connectionManager "local/zookeeper/internal/ConnectionManager"
 	"local/zookeeper/internal/logger"

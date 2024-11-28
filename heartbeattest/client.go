@@ -16,7 +16,9 @@ var sessionID int
 
 // Main entry for client
 func ClientMain() {
+	time.Sleep(time.Second)
 	recv, _ := connectionManager.Init()
+	time.Sleep(time.Second)
 	sessionID = -1 //Initialize as -1 representing no session ID
 
 	//Main Listener
@@ -26,7 +28,7 @@ func ClientMain() {
 	findLiveServer()
 
 	//Start Heartbeat
-	go heartbeat()
+	// go heartbeat()
 
 	//Main loop
 	scanner := bufio.NewScanner(os.Stdin)

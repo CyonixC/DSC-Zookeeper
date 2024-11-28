@@ -19,7 +19,12 @@ func main() {
 	lg := slog.New(handler)
 	logger.InitLogger(lg)
 	recv_channel, failed := connectionManager.Init()
-	commitChan, denied := prp.Init(recv_channel, rejectAll)
+	go func() {  //Removed listener from proposals package, call ProcessZabMessage manually
+		for network_msg := range recv_channel {
+			prp.ProcessZabMessage(network_msg)
+		}
+	}()
+	commitChan, denied := prp.Init(rejectAll)
 	go func() {
 		for str := range failed {
 			logger.Info("Failed to send to", str)
@@ -46,5 +51,6 @@ func main() {
 			requestCounter++
 		}
 	}
+
 	time.Sleep(time.Hour)
 }
