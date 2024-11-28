@@ -16,7 +16,7 @@ var sessionID string
 // Main entry for client
 func ClientMain() {
 	recv, failedSends := connectionManager.Init()
-	go monitorConnection(failedSends)
+	go monitorConnectionToServer(failedSends)
 
 	//Main Listener
 	go listener(recv)
@@ -96,13 +96,20 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 		// Type assertion to work with the data
 		obj := message.(map[string]interface{})
 		switch obj["message"] {
+		case "INFO":
+			fmt.Println(obj["info"])
 		case "START_SESSION_OK":
 			// Store the new ID
 			sessionID = obj["session_id"].(string)
+			fmt.Println("Session established successfully.")
 		case "REESTABLISH_SESSION_OK":
-			// OK
+			fmt.Println("Session reestablished successfully.")
 		case "REESTABLISH_SESSION_REJECT":
-			// Store the new ID
+			sessionID = ""
+			fmt.Println("Session has expired, please startsession again.")
+		case "END_SESSION_OK":
+			sessionID = ""
+			fmt.Println("Session ended successfully.")
 		}
 	}
 }
@@ -138,10 +145,10 @@ func findLiveServer() bool {
 }
 
 // Monitor TCP connection
-func monitorConnection(failedSends chan string) {
-	for msg := range failedSends {
-		if msg == connectedServer {
-			logger.Error(fmt.Sprint("TCP connection to connected server failed: ", msg))
+func monitorConnectionToServer(failedSends chan string) {
+	for failedNode := range failedSends {
+		if failedNode == connectedServer {
+			logger.Error(fmt.Sprint("TCP connection to connected server failed: ", failedNode))
 			connectedServer = ""
 			logger.Info("Attempting to reconnect to a new server")
 			findLiveServer()

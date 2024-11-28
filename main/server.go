@@ -14,13 +14,20 @@ import (
 	"time"
 )
 
-var pending_requests map[int]connectionManager.NetworkMessage //Map request IDs to the original message sent by client
+//Map request IDs to the original message sent by client
+var pending_requests map[int]connectionManager.NetworkMessage 
+
+//Map clients connected to this server to session IDs.
+//Add to this map when receiving a START_SESSION or REESTABLISH_SESSION, remove from this map on END_SESSION or when detect TCP closed.
+var local_sessions map[string]string
 
 // Main entry for server
 func ServerMain() {
 	pending_requests = make((map[int]connectionManager.NetworkMessage))
+	local_sessions = make((map[string]string))
 
-	recv, _ := connectionManager.Init()
+	recv, failedSends := connectionManager.Init()
+	go monitorConnectionToClient(failedSends)
 	committed, denied := proposals.Init(znode.Check)
 
 	//TODO call election instead
@@ -57,13 +64,23 @@ func SendJSONMessageToClient(jsonData interface{}, client string) error {
 	return nil
 }
 
+// Helper function to send info/error messages back to client (i.e. just need to print in client terminal)
+func SendInfoMessageToClient(info string, client string) {
+	reply_msg := map[string]interface{}{
+		"message": "INFO",
+		"info": info,
+	}
+	SendJSONMessageToClient(reply_msg, client)
+}
+
 // Listen for messages
 func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 	for network_msg := range recv_channel {
-		logger.Info(fmt.Sprint("Receive message from ", network_msg.Remote))
+		this_client := network_msg.Remote
+		logger.Info(fmt.Sprint("Receive message from ", this_client))
 
 		//Handle messages from client
-		if strings.HasPrefix(network_msg.Remote, "client") {
+		if strings.HasPrefix(this_client, "client") {
 			var message interface{}
 			err := json.Unmarshal([]byte(network_msg.Message), &message)
 			if err != nil {
@@ -84,38 +101,42 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 						break
 					}
 				}
-
-				logger.Info(fmt.Sprint("Sending session write request: ", new_session_id, " to leader"))
 				data, _ := znode.Encode_create_session(new_session_id, 2)
 
-				//Generate a request ID, send the request, and add it to pending_requests
-				new_req_id := generateUniqueRequestID()
-				proposals.SendWriteRequest(data, new_req_id)
-				pending_requests[new_req_id] = network_msg
+				logger.Info(fmt.Sprint("Sending session write request: ", new_session_id, " to leader"))
+				generateAndSendRequest(data, network_msg) //Generate a request ID, send the request, and add it to pending_requests
 
 			case "REESTABLISH_SESSION":
 				// Check if session ID exist, return success if it is, else return failure with new ID.
+				if znode.Exists_session(obj["session_id"].(string)) {
+					local_sessions[this_client] = obj["session_id"].(string)
+					reply_msg := map[string]interface{}{
+						"message": "REESTABLISH_SESSION_OK",
+						"session_id": obj["session_id"],
+					}
+					SendJSONMessageToClient(reply_msg, this_client)
+				} else {
+					reply_msg := map[string]interface{}{
+						"message": "REESTABLISH_SESSION_REJECT",
+					}
+					SendJSONMessageToClient(reply_msg, this_client)
+				}
+
+				//TODO add znode.Update_watch_cache()
+
+			case "END_SESSION":
+				data, err := znode.Encode_delete_session(obj["session_id"].(string))
+				if err != nil {
+					SendInfoMessageToClient(err.Error(), this_client)
+				}
+				
+				logger.Info(fmt.Sprint("Sending session end request: ", obj["session_id"].(string), " to leader"))
+				generateAndSendRequest(data, network_msg)
 			}
+			
 		} else {
 			//Handle messages from other server
 			proposals.ProcessZabMessage(network_msg)
-		}
-	}
-}
-
-//Generate a random unique request ID
-//Ensuring that different servers cannot generate the same ID by prepending with server number
-func generateUniqueRequestID() int {
-	server_name := configReader.GetName()
-	lastDigit := rune(server_name[len(server_name)-1])
-	server_number, _ := strconv.Atoi(string(lastDigit))
-
-	var new_req_id int
-	for {
-		new_req_id = server_number*1000000000 + rand.Intn(10000000) 
-		_, exists := pending_requests[new_req_id]
-		if !exists {
-			return new_req_id
 		}
 	}
 }
@@ -145,9 +166,16 @@ func committedListener(committed_channel chan proposals.Request) {
 						"message": "START_SESSION_OK",
 						"session_id": session_id,
 					}
+					local_sessions[original_message.Remote] = session_id
+
+				case "END_SESSION":
+					reply_msg = map[string]interface{}{
+						"message": "END_SESSION_OK",
+					}
+					delete(local_sessions, original_message.Remote)
 				}
 
-			SendJSONMessageToClient(reply_msg, pending_requests[request.ReqNumber].Remote)
+			SendJSONMessageToClient(reply_msg, original_message.Remote)
 			delete(pending_requests, request.ReqNumber)
 		}
 	}
@@ -177,7 +205,42 @@ func deniedListener(denied_channel chan proposals.Request) {
 	}
 }
 
-// Heartbeat the leader every x seconds
+//Helper function to generate unique request ID, send request, and append the new request to pending_requests
+func generateAndSendRequest(data []byte, original_message connectionManager.NetworkMessage) {
+	new_req_id := generateUniqueRequestID()
+	proposals.SendWriteRequest(data, new_req_id)
+	pending_requests[new_req_id] = original_message
+}
+
+//Generate a random unique request ID
+//Ensuring that different servers cannot generate the same ID by prepending with server number
+func generateUniqueRequestID() int {
+	server_name := configReader.GetName()
+	lastDigit := rune(server_name[len(server_name)-1])
+	server_number, _ := strconv.Atoi(string(lastDigit))
+
+	var new_req_id int
+	for {
+		new_req_id = server_number*1000000000 + rand.Intn(10000000) 
+		_, exists := pending_requests[new_req_id]
+		if !exists {
+			return new_req_id
+		}
+	}
+}
+
+// Monitor TCP connection
+func monitorConnectionToClient(failedSends chan string) {
+	for failedNode := range failedSends {
+		//If it's my client, remove from local_sessions
+		_, exists := local_sessions[failedNode]
+		if exists {
+			delete(local_sessions, failedNode)
+		}
+	}
+}
+
+// TODO: Heartbeat the leader every x seconds with local sessions
 func serverHeartbeat() {
 	for {
 		time.Sleep(time.Second * time.Duration(3))
