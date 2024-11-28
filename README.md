@@ -22,7 +22,7 @@ To change the file being compiled, open the dockerfile and change the target fil
 RUN CGO_ENABLED=0 GOOS=linux go build -o ./go-main ./dockertest/main.go
 ```
 ## Folder structure
-The packages used for this project are located in the `/internal`. Following is a brief description of the packages; for more detailed information, refer to the README files in the corresponding directories.
+The packages used for this project are located in the `/internal`. Client and server code that implements these packages are located in `/main`. Following is a brief description of the packages; for more detailed information, refer to the README files in the corresponding directories.
 
 ### Connection manager
 This handles TCP messaging between nodes. This should be used with Docker.
