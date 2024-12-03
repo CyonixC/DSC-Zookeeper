@@ -15,7 +15,6 @@ type MessageType int
 
 var addresses []string = configReader.GetConfig().Servers
 var mu sync.Mutex
-var Coordinator string
 
 const (
 	MessageTypeDiscovery = iota
@@ -24,12 +23,30 @@ const (
 	MessageTypeHeartbeat
 )
 
+type CoordinatorStruct struct {
+	sync.Mutex
+	newCoordinator string
+}
+
+var Coordinator CoordinatorStruct
+
 type MessageWrapper struct {
 	Message_Type  MessageType
 	Source        string
 	Visited_Nodes []string
 	ZxId_List     []uint32
 	Payload       []string
+}
+
+func (coordinator *CoordinatorStruct) setCoordinator(electedCoordinator string) {
+	coordinator.Lock()
+	defer coordinator.Unlock()
+	coordinator.newCoordinator = electedCoordinator
+}
+func (coordinator *CoordinatorStruct) GetCoordinator() string {
+	coordinator.Lock()
+	defer coordinator.Unlock()
+	return coordinator.newCoordinator
 }
 
 func ReorderRing(ring_structure []string, id string) []string {
@@ -115,7 +132,7 @@ func getCorrespondingValue(numArray []uint32, charArray []string) string {
 	return charArray[maxIndex]
 }
 
-func HandleDiscoveryMessage(ring_structure []string, message MessageWrapper, failechan chan string) {
+func HandleDiscoveryMessage(ring_structure []string, message MessageWrapper) {
 	nodeIP := configReader.GetName()
 	isComplete := Pass_message_down_ring(ring_structure, message)
 	if isComplete {
@@ -141,7 +158,7 @@ func InitiateElectionDiscovery() {
 }
 
 // Processes an announcement message and initiates a new ring announcement if the election finishes.
-func HandleAnnouncementMessage(ring []string, message MessageWrapper, failedchan chan string) string {
+func HandleAnnouncementMessage(ring []string, message MessageWrapper) string {
 	isComplete := Pass_message_down_ring(ring, message)
 	if isComplete {
 		logger.Info(fmt.Sprintf("Finish Election"))
@@ -150,25 +167,26 @@ func HandleAnnouncementMessage(ring []string, message MessageWrapper, failedchan
 	return slices.Max(message.Payload)
 }
 
-func HandleNewRingMessage(ring_structure []string, message MessageWrapper, id string, failedchan chan string) []string {
+func HandleNewRingMessage(ring_structure []string, message MessageWrapper, id string) []string {
 	Pass_message_down_ring(ring_structure, message)
 	return message.Payload
 }
-func HandleMessage(nodeIP string, failedChan chan string, messageWrapper MessageWrapper) bool {
-
+func HandleMessage(messageWrapper MessageWrapper) bool {
+	nodeIP := configReader.GetName()
 	switch messageWrapper.Message_Type {
 	case MessageTypeDiscovery:
 		ring_structure := ReorderRing(addresses, nodeIP)
-		HandleDiscoveryMessage(ring_structure, messageWrapper, failedChan)
+		HandleDiscoveryMessage(ring_structure, messageWrapper)
 		return true
 	case MessageTypeAnnouncement:
 		ring_structure := ReorderRing(addresses, nodeIP)
-		Coordinator = HandleAnnouncementMessage(ring_structure, messageWrapper, failedChan)
-		logger.Info(fmt.Sprint(nodeIP, " acknowledges new coordinator ", Coordinator))
+		newcoords := HandleAnnouncementMessage(ring_structure, messageWrapper)
+		Coordinator.setCoordinator(newcoords)
+		logger.Info(fmt.Sprint(nodeIP, " acknowledges new coordinator ", newcoords))
 		return false
 	case MessageTypeNewRing:
 		ring_structure := ReorderRing(addresses, nodeIP)
-		updatedRing := HandleNewRingMessage(ring_structure, messageWrapper, nodeIP, failedChan)
+		updatedRing := HandleNewRingMessage(ring_structure, messageWrapper, nodeIP)
 		addresses = updatedRing
 		logger.Info(fmt.Sprint("Updated ring structure for node ", nodeIP, updatedRing))
 		return false

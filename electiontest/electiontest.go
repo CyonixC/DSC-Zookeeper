@@ -11,26 +11,27 @@ import (
 	"os"
 	"time"
 )
+
 var config configReader.Config
 
 func main() {
 	mode := os.Getenv("MODE") // "Server" or "Client"
 	handler := logger.NewPlainTextHandler(slog.LevelDebug)
-	logger.InitLogger(slog.New(handler)) 
+	logger.InitLogger(slog.New(handler))
 	if mode == "Server" {
 		logger.Info("Server starting...")
 		go client(os.Getenv("NAME"))
 	}
-	select{}
+	select {}
 }
 
 func client(address string) {
-	recv, failedchan := connectionManager.Init()
+	recv, _ := connectionManager.Init()
 	timeoutDuration := 10 * time.Second
 	timeoutTimer := time.NewTimer(timeoutDuration)
 	election.ElectionInit()
-	if address=="server1"{
-		
+	if address == "server1" {
+
 		election.InitiateElectionDiscovery()
 	}
 	for {
@@ -43,16 +44,17 @@ func client(address string) {
 			if err != nil {
 				logger.Fatal(fmt.Sprint("Error unmarshalling message:", err))
 			}
-			electionstatus:=election.HandleMessage(address, failedchan, messageWrapper)
+			electionstatus := election.HandleMessage(messageWrapper)
 			if electionstatus {
-				fmt.Print("beep")
+				logger.Info(fmt.Sprint("Election Ongoing"))
+			} else {
+				logger.Info(fmt.Sprint("Election Stop"))
+
 			}
-			{
-				fmt.Print("boop")
-			}
-		case <-timeoutTimer.C: 
+
+		case <-timeoutTimer.C:
 			fmt.Println("Timeout occurred. Initiating election.")
-			
+
 			election.InitiateElectionDiscovery()
 			timeoutTimer.Reset(timeoutDuration)
 		}

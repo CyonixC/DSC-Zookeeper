@@ -6,6 +6,7 @@ import (
 	configReader "local/zookeeper/internal/ConfigReader"
 	connectionManager "local/zookeeper/internal/ConnectionManager"
 	proposals "local/zookeeper/internal/Proposals"
+	"local/zookeeper/internal/election"
 	"local/zookeeper/internal/logger"
 	"local/zookeeper/internal/znode"
 	"math/rand"
@@ -25,13 +26,14 @@ var local_sessions map[string]string
 func ServerMain() {
 	pending_requests = make((map[int]connectionManager.NetworkMessage))
 	local_sessions = make((map[string]string))
-
+	election.ElectionInit()
 	recv, failedSends := connectionManager.Init()
 	go monitorConnectionToClient(failedSends)
 	committed, denied := proposals.Init(znode.Check)
 
 	//TODO call election instead
-	if configReader.GetName() == "server1" {
+	election.InitiateElectionDiscovery()
+	if election.Coordinator.GetCoordinator() == configReader.GetName() {
 		znode.Init_znode_cache()
 	}
 
@@ -75,12 +77,27 @@ func SendInfoMessageToClient(info string, client string) {
 
 // Listen for messages
 func mainListener(recv_channel chan connectionManager.NetworkMessage) {
+
+	// election.HandleMessage(messageWrapper)
 	for network_msg := range recv_channel {
+
 		this_client := network_msg.Remote
 		logger.Info(fmt.Sprint("Receive message from ", this_client))
 
 		//Handle messages from client
-		if strings.HasPrefix(this_client, "client") {
+		if network_msg.Type == connectionManager.ELECTION {
+			var messageWrapper election.MessageWrapper
+			err := json.Unmarshal(network_msg.Message, &messageWrapper)
+			if err != nil {
+				logger.Fatal(fmt.Sprint("Error unmarshalling message:", err))
+			}
+			electionstatus := election.HandleMessage(messageWrapper)
+			if electionstatus {
+				logger.Info(fmt.Sprint("Election Ongoing"))
+			} else {
+				logger.Info(fmt.Sprint("Election Completed"))
+			}
+		} else if network_msg.Type == connectionManager.CLIENTMSG {
 			var message interface{}
 			err := json.Unmarshal([]byte(network_msg.Message), &message)
 			if err != nil {
