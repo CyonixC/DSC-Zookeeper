@@ -253,6 +253,8 @@ func monitorConnectionToClient(failedSends chan string) {
 		_, exists := local_sessions[failedNode]
 		if exists {
 			delete(local_sessions, failedNode)
+		} else {
+			election.InitiateElectionDiscovery()
 		}
 	}
 }
