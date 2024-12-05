@@ -149,6 +149,62 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 
 				logger.Info(fmt.Sprint("Sending session end request: ", obj["session_id"].(string), " to leader"))
 				generateAndSendRequest(data, network_msg)
+			case "SYNC":
+				data, err := znode.Encode_sync()
+				if err != nil {
+					SendInfoMessageToClient(err.Error(), this_client)
+				}
+				logger.Info(fmt.Sprint("Sending sync request", obj["session_id"].(string), "to leader"))
+				generateAndSendRequest(data, network_msg)
+			case "CREATE":
+				data, err := znode.Encode_create(obj["path"].(string), obj["data"].([]byte), true, true, obj["session_id"].(string)) // where i get the sequential and ephermeral from
+				if err != nil {
+					SendInfoMessageToClient(err.Error(), this_client)
+				}
+				logger.Info(fmt.Sprint("Sending create request", obj["data"].([]byte), " to leader"))
+				generateAndSendRequest(data, network_msg)
+			case "DELETE":
+				data, err := znode.Encode_delete(obj["path"].(string), obj["version"].((int)))
+				if err != nil {
+					SendInfoMessageToClient(err.Error(), this_client)
+				}
+				logger.Info(fmt.Sprint("Sending delete request"))
+				generateAndSendRequest(data, network_msg)
+			case "SETDATA":
+				data, err := znode.Encode_setdata(obj["path"].(string), obj["data"].([]byte), obj["version"].(int))
+				if err != nil {
+					SendInfoMessageToClient(err.Error(), this_client)
+				}
+				logger.Info(fmt.Sprint("Setting data"))
+				generateAndSendRequest(data, network_msg)
+			case "GETCHILDREN":
+				children, err := znode.GetChildren(obj["path"].(string))
+				if err != nil {
+					SendInfoMessageToClient(err.Error(), this_client)
+				}
+				logger.Info(fmt.Sprint("Getting children"))
+				reply_msg := map[string]interface{}{
+					"message":  "GETCHILDREN",
+					"children": children,
+				}
+				SendJSONMessageToClient(reply_msg, this_client)
+			case "EXISTS":
+				exists := znode.Exists(obj["path"].(string))
+				reply_msg := map[string]interface{}{
+					"message": "EXISTS",
+					"exists":  exists,
+				}
+				SendJSONMessageToClient(reply_msg, this_client)
+			case "GETDATA":
+				getdata, err := znode.GetData(obj["path"].(string))
+				if err != nil {
+					logger.Error(fmt.Sprint("There is error in getdata"))
+				}
+				reply_msg := map[string]interface{}{
+					"message": "GETDATA",
+					"getdata": getdata,
+				}
+				SendJSONMessageToClient(reply_msg, this_client)
 			}
 
 		} else {
