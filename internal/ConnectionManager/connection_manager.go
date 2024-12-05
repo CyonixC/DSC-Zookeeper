@@ -265,7 +265,7 @@ func connectToSystemServers(serverNames []string) {
 		}
 		go attemptConnection(serverName, successChan)
 	}
-	timer := time.NewTimer(time.Duration(tcpEstablishTimeoutSeconds) * time.Second)
+	timer := time.NewTimer(tcpEstablishTimeout)
 	completed := 0
 	for completed < establishCount {
 		select {
@@ -293,7 +293,8 @@ func attemptConnection(serverName string, successChan chan NamedConnection) bool
 	logger.Debug(fmt.Sprint("Attempting to connect to ", serverName))
 
 	// Dial with timeout
-	timeout := time.Duration(tcpEstablishTimeoutSeconds) * time.Second
+	timeout := tcpEstablishTimeout
+	deadline := time.Now().Add(timeout)
 	conn, err := net.DialTimeout("tcp", serverName+":8080", timeout)
 
 	// Channel may be closed; in that case, ignore the panic.
@@ -304,8 +305,9 @@ func attemptConnection(serverName string, successChan chan NamedConnection) bool
 	}()
 
 	if err != nil {
+		time.Sleep(time.Until(deadline))
 		// Failed to connect, return nil
-		logger.Debug(fmt.Sprint("Failed to connect to ", serverName, ". Reporting to channel ", successChan))
+		logger.Debug(fmt.Sprint("Failed to connect to ", serverName, ": ", err, ". Reporting to channel ", successChan))
 		successChan <- NamedConnection{
 			Remote:     serverName,
 			Connection: nil,
