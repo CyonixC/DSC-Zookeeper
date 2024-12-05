@@ -13,14 +13,13 @@ import (
 	"os"
 )
 
-var currentCoordinator string = "server1"
-
 var n_systems int
 
 var zxidCounter ZXIDCounter
 var ackCounter = AckCounter{ackTracker: make(map[uint32]int)}
 var proposalsQueue SafeQueue[Proposal]
 var syncTrack SyncTracker
+var messageQueue SafeQueue[cxn.NetworkMessage]
 
 var newProposalChan = make(chan Proposal, 10)
 var toCommitChan = make(chan Request, 10)
@@ -35,13 +34,15 @@ var requestChecker checkFunction
 // - A channel which NetworkMessages arrive on from the network
 // - A "check" function which takes in data in a proposal and returns modified data to be used. This function returns an error if
 // the check fails.
-func Init(check checkFunction) (committed chan Request, denied chan Request, zxidCounter *ZXIDCounter) {
+func Init(check checkFunction) (committed chan Request, denied chan Request, counter *ZXIDCounter) {
 	go proposalWriter(newProposalChan)
 	go messageSender(toSendChan)
 	n_systems = len(configReader.GetConfig().Servers)
 	committed = toCommitChan
 	requestChecker = check
 	denied = failedRequestChan
+	zxidCounter = ZXIDCounter{}
+	counter = &zxidCounter
 	return
 }
 
@@ -53,6 +54,17 @@ func SendWriteRequest(content []byte, requestNum int) {
 		Content:   content,
 	}
 	sendRequest(req)
+}
+
+func StoreZabMessage(netMsg cxn.NetworkMessage) {
+	messageQueue.enqueue(netMsg)
+}
+
+func EmptyMessageQueue() {
+	for !messageQueue.isEmpty() {
+		msg, _ := messageQueue.dequeue()
+		ProcessZabMessage(msg)
+	}
 }
 
 // Process a Zab message received from the network.
@@ -89,7 +101,7 @@ func ProcessZabMessage(netMsg cxn.NetworkMessage) {
 		failedRequestChan <- originalReq
 
 	case SyncErr:
-		logger.Error(fmt.Sprint("Received SYNC ERROR! Check if current coordinator is correct: ", currentCoordinator))
+		logger.Error(fmt.Sprint("Received SYNC ERROR! Check if current coordinator is correct: ", election.Coordinator.GetCoordinator()))
 	}
 
 }
@@ -374,7 +386,7 @@ func makeACK(msg ZabMessage) (ack ZabMessage) {
 // processed instead of being sent through the network.
 func sendRequest(req Request) {
 	name := os.Getenv("NAME")
-	if currentCoordinator == name {
+	if election.Coordinator.GetCoordinator() == name {
 		processRequest(req, name)
 		return
 	}
@@ -388,7 +400,7 @@ func sendRequest(req Request) {
 		Req,
 		serial,
 	}
-	queueSend(msg, false, currentCoordinator)
+	queueSend(msg, false, election.Coordinator.GetCoordinator())
 }
 
 func queueSend(zabMsg ZabMessage, isBroadcast bool, remote string) {

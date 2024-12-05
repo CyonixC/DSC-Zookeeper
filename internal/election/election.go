@@ -159,7 +159,6 @@ func InitiateElectionDiscovery() {
 	logger.Info(fmt.Sprintf("Node %s initiated election discovery\n", nodeIP))
 	initialContent := []string{}
 	StartRingMessage(initRing, initialContent, MessageTypeDiscovery)
-
 }
 
 // Processes an announcement message and initiates a new ring announcement if the election finishes.
@@ -200,6 +199,7 @@ func HandleMessage(messageWrapper MessageWrapper) bool {
 	}
 }
 
-func ElectionInit(zxidCounter ZXIDRef) {
+func ElectionInit(counter ZXIDRef) {
 	addresses = configReader.GetConfig().Servers
+	zxidCounter = counter
 }
