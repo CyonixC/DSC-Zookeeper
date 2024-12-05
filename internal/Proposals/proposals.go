@@ -21,9 +21,9 @@ var proposalsQueue SafeQueue[Proposal]
 var syncTrack SyncTracker
 var messageQueue SafeQueue[cxn.NetworkMessage]
 
-var newProposalChan = make(chan Proposal, 10)
-var toCommitChan = make(chan Request, 10)
-var toSendChan = make(chan ToSendMessage, 10)
+var newProposalChan = make(chan Proposal, 100)
+var toCommitChan = make(chan Request, 100)
+var toSendChan = make(chan ToSendMessage, 100)
 var failedRequestChan = make(chan Request)
 
 type checkFunction func([]byte) ([]byte, error)

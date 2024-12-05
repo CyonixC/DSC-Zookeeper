@@ -26,7 +26,6 @@ func randomPassFail(proposed []byte) ([]byte, error) {
 func main() {
 	handler := logger.NewColouredTextHandler(slog.LevelDebug)
 	logger.InitLogger(slog.New(handler))
-	time.Sleep(time.Second)
 	recv, failed := connectionManager.Init()
 	time.Sleep(time.Second)
 	go func() { //Removed listener from proposals package, call ProcessZabMessage manually
@@ -60,11 +59,9 @@ func main() {
 		logger.Fatal("Failed")
 	}
 	election.ElectionInit(counter)
-	time.Sleep(10 * time.Second)
 	if configReader.GetName() == "server1" {
 		election.InitiateElectionDiscovery()
 	}
-	time.Sleep(10 * time.Second)
 
 	go func() {
 		for f := range failed {
@@ -88,7 +85,7 @@ func main() {
 	}()
 
 	for i := 0; ; i++ {
-		time.Sleep(time.Second)
+		time.Sleep(time.Second * 5)
 		proposals.SendWriteRequest([]byte(fmt.Sprint("Test", i)), i)
 	}
 }
