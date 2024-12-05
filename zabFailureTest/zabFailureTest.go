@@ -26,13 +26,14 @@ func main() {
 	logger.InitLogger(slog.New(handler))
 	time.Sleep(time.Second)
 	recv, failed := connectionManager.Init()
+	time.Sleep(time.Second)
 	go func() { //Removed listener from proposals package, call ProcessZabMessage manually
 		for network_msg := range recv {
 			proposals.ProcessZabMessage(network_msg)
 		}
 	}()
 	success, rejected := proposals.Init(randomPassFail)
-	time.Sleep(time.Second)
+	time.Sleep(10 * time.Second)
 
 	go func() {
 		for f := range failed {
