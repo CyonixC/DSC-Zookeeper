@@ -56,7 +56,6 @@ func SendWriteRequest(content []byte, requestNum int) {
 
 // Process a Zab message received from the network.
 func ProcessZabMessage(netMsg cxn.NetworkMessage) {
-	logger.Debug("Received ZabMessage")
 	src := netMsg.Remote
 	msgSerial := netMsg.Message
 
@@ -66,6 +65,8 @@ func ProcessZabMessage(netMsg cxn.NetworkMessage) {
 		logger.Debug("Not a ZabMessage")
 		return
 	}
+
+	logger.Debug(fmt.Sprint("Received ZabMessage of type ", msg.ZabType.ToStr(), " from ", src))
 
 	switch msg.ZabType {
 	case Req:
@@ -99,6 +100,7 @@ func processProposal(prop Proposal, source string, originalMsg ZabMessage) {
 		// TODO trigger an election
 		return
 	}
+	logger.Debug(fmt.Sprint("Received Proposal of type ", prop.PropType.ToStr(), " from ", source))
 	switch prop.PropType {
 	case StateChange:
 		processStateChangeProposal(prop, source, originalMsg)
