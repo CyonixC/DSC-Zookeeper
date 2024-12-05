@@ -27,18 +27,12 @@ func main() {
 	handler := logger.NewColouredTextHandler(slog.LevelDebug)
 	logger.InitLogger(slog.New(handler))
 	recv, failed := connectionManager.Init()
-	time.Sleep(time.Second)
 	go func() { //Removed listener from proposals package, call ProcessZabMessage manually
-		electing := false
+		proposals.Pause()
 		for network_msg := range recv {
 			switch network_msg.Type {
 			case connectionManager.ZAB:
-				if electing {
-					// If election currently happening, enqueue all ZAB messages
-					proposals.StoreZabMessage(network_msg)
-				} else {
-					proposals.ProcessZabMessage(network_msg)
-				}
+				proposals.EnqueueZabMessage(network_msg)
 			case connectionManager.ELECTION:
 				var messageWrapper election.MessageWrapper
 				err := json.Unmarshal(network_msg.Message, &messageWrapper)
@@ -46,11 +40,11 @@ func main() {
 					logger.Fatal(fmt.Sprint("Error unmarshalling message:", err))
 				}
 				currentlyElecting := election.HandleMessage(messageWrapper)
-				if electing && !currentlyElecting {
-					// If the election has just finished, process all Zab messages received during the election.
-					proposals.EmptyMessageQueue()
+				if currentlyElecting {
+					proposals.Pause()
+				} else {
+					proposals.Continue()
 				}
-				electing = currentlyElecting
 			}
 		}
 	}()
