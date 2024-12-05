@@ -5,7 +5,6 @@ import (
 	"fmt"
 	configReader "local/zookeeper/internal/ConfigReader"
 	connectionManager "local/zookeeper/internal/ConnectionManager"
-	proposals "local/zookeeper/internal/Proposals"
 	"local/zookeeper/internal/logger"
 	"slices"
 	"sync"
@@ -37,6 +36,12 @@ type MessageWrapper struct {
 	ZxId_List     []uint32
 	Payload       []string
 }
+
+type ZXIDRef interface {
+	GetLatestZXID() uint32
+}
+
+var zxidCounter ZXIDRef
 
 func (coordinator *CoordinatorStruct) setCoordinator(electedCoordinator string) {
 	coordinator.Lock()
@@ -70,7 +75,7 @@ func StartRingMessage(ring_structure []string, messageContent []string, messageT
 	visitedNodes := make([]string, 0, len(ring_structure))
 	visitedNodes = append(visitedNodes, nodeIP)
 	zxidList := make([]uint32, 0, len(ring_structure))
-	zxidList = append(zxidList, proposals.ZxidCounter.GetLatestZXID())
+	zxidList = append(zxidList, zxidCounter.GetLatestZXID())
 	message := MessageWrapper{
 		messageType,
 		nodeIP,
@@ -88,7 +93,7 @@ func Pass_message_down_ring(ring_structure []string, message MessageWrapper) boo
 		return true
 	} else {
 		message.Visited_Nodes = append(message.Visited_Nodes, id)
-		message.ZxId_List = append(message.ZxId_List, proposals.ZxidCounter.GetLatestZXID())
+		message.ZxId_List = append(message.ZxId_List, zxidCounter.GetLatestZXID())
 		logger.Info(fmt.Sprintf("Updated Visited Nodes: %s, thread id: %s\n", message.Visited_Nodes, id))
 		logger.Info(fmt.Sprintf("Updated Zxid: [%d], thread id: %s\n", message.ZxId_List, id))
 
@@ -195,6 +200,6 @@ func HandleMessage(messageWrapper MessageWrapper) bool {
 	}
 }
 
-func ElectionInit() {
+func ElectionInit(zxidCounter ZXIDRef) {
 	addresses = configReader.GetConfig().Servers
 }

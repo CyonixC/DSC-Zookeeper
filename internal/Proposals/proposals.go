@@ -7,6 +7,7 @@ import (
 	"fmt"
 	configReader "local/zookeeper/internal/ConfigReader"
 	cxn "local/zookeeper/internal/ConnectionManager"
+	"local/zookeeper/internal/election"
 	"local/zookeeper/internal/logger"
 	"log"
 	"os"
@@ -16,7 +17,7 @@ var currentCoordinator string = "server1"
 
 var n_systems int
 
-var ZxidCounter ZXIDCounter
+var zxidCounter ZXIDCounter
 var ackCounter = AckCounter{ackTracker: make(map[uint32]int)}
 var proposalsQueue SafeQueue[Proposal]
 var syncTrack SyncTracker
@@ -34,7 +35,7 @@ var requestChecker checkFunction
 // - A channel which NetworkMessages arrive on from the network
 // - A "check" function which takes in data in a proposal and returns modified data to be used. This function returns an error if
 // the check fails.
-func Init(check checkFunction) (committed chan Request, denied chan Request) {
+func Init(check checkFunction) (committed chan Request, denied chan Request, zxidCounter *ZXIDCounter) {
 	go proposalWriter(newProposalChan)
 	go messageSender(toSendChan)
 	n_systems = len(configReader.GetConfig().Servers)
@@ -95,9 +96,8 @@ func ProcessZabMessage(netMsg cxn.NetworkMessage) {
 
 // Process a received proposal
 func processProposal(prop Proposal, source string, originalMsg ZabMessage) {
-	if currentCoordinator != source {
-		// Proposal is not from the current coordinator; ignore it.
-		// TODO trigger an election
+	if election.Coordinator.GetCoordinator() != source {
+		logger.Warn(fmt.Sprint("Received Proposal from ", source, ", which is not the coordinator. Ignoring..."))
 		return
 	}
 	logger.Debug(fmt.Sprint("Received Proposal of type ", prop.PropType.ToStr(), " from ", source))
@@ -119,7 +119,7 @@ func processStateChangeProposal(prop Proposal, source string, originalMsg ZabMes
 	logger.Info(fmt.Sprint("receives proposal with zxid", propZxid))
 	epoch := prop.EpochNum
 	count := prop.CountNum
-	ZxidCounter.setVals(epoch, count)
+	zxidCounter.setVals(epoch, count)
 
 	// If we're currently syncing, automatically save and commit, and don't ACK.
 	syncing, zxidCap := syncTrack.readVals()
@@ -161,7 +161,7 @@ func processNewLeaderProposal(prop Proposal, source string, originalMsg ZabMessa
 	}
 
 	latestZxid := bytesToUint32(prop.Content)
-	currentEpoch, currentCount := ZxidCounter.check()
+	currentEpoch, currentCount := zxidCounter.check()
 	currentZxid := getZXIDAsInt(currentEpoch, currentCount)
 	// Already holding the latest proposal, just ACK and return.
 	if currentZxid == latestZxid {
@@ -242,7 +242,7 @@ func processRequest(req Request, remoteID string) error {
 			return err
 		}
 
-		epoch, count := ZxidCounter.incCount()
+		epoch, count := zxidCounter.incCount()
 		zxid := getZXIDAsInt(epoch, count)
 		ackCounter.storeNew(zxid)
 		newReq := Request{
@@ -265,7 +265,7 @@ func processRequest(req Request, remoteID string) error {
 		broadcastProposal(prop)
 	case Sync:
 		// Don't check coodinator status, just send to make it simple
-		highestEpoch, highestCount := ZxidCounter.check()
+		highestEpoch, highestCount := zxidCounter.check()
 		sentzxid := bytesToUint32(req.Content)
 		sentEpoch, count := decomposeZXID(sentzxid)
 

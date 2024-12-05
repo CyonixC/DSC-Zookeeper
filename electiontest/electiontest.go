@@ -14,6 +14,12 @@ import (
 
 var config configReader.Config
 
+type counter struct{}
+
+func (c *counter) GetLatestZXID() uint32 {
+	return 1
+}
+
 func main() {
 	mode := os.Getenv("MODE") // "Server" or "Client"
 	handler := logger.NewPlainTextHandler(slog.LevelDebug)
@@ -26,10 +32,11 @@ func main() {
 }
 
 func client(address string) {
+	var c counter
 	recv, _ := connectionManager.Init()
 	timeoutDuration := 10 * time.Second
 	timeoutTimer := time.NewTimer(timeoutDuration)
-	election.ElectionInit()
+	election.ElectionInit(&c)
 	if address == "server1" {
 
 		election.InitiateElectionDiscovery()
