@@ -21,14 +21,15 @@ var proposalsQueue SafeQueue[Proposal]
 var syncTrack SyncTracker
 var messageQueue SafeQueue[cxn.NetworkMessage]
 
-var newProposalChan = make(chan Proposal, 100)
-var toCommitChan = make(chan Request, 100)
-var toSendChan = make(chan ToSendMessage, 100)
+var newProposalChan = make(chan Proposal, 10)
+var toCommitChan = make(chan Request, 10)
+var toSendChan = make(chan ToSendMessage, 10)
 var failedRequestChan = make(chan Request)
 
 type checkFunction func([]byte) ([]byte, error)
 
 var requestChecker checkFunction
+var enabled bool
 
 // Initialise the background goroutines for handling proposals. This Init function takes:
 // - A channel which NetworkMessages arrive on from the network
@@ -37,6 +38,7 @@ var requestChecker checkFunction
 func Init(check checkFunction) (committed chan Request, denied chan Request, counter *ZXIDCounter) {
 	go proposalWriter(newProposalChan)
 	go messageSender(toSendChan)
+	go messageProcessor()
 	n_systems = len(configReader.GetConfig().Servers)
 	committed = toCommitChan
 	requestChecker = check
@@ -44,6 +46,14 @@ func Init(check checkFunction) (committed chan Request, denied chan Request, cou
 	zxidCounter = ZXIDCounter{}
 	counter = &zxidCounter
 	return
+}
+
+func Pause() {
+	enabled = false
+}
+
+func Continue() {
+	enabled = true
 }
 
 // Sends a new write request to a given machine.
@@ -56,15 +66,8 @@ func SendWriteRequest(content []byte, requestNum int) {
 	sendRequest(req)
 }
 
-func StoreZabMessage(netMsg cxn.NetworkMessage) {
+func EnqueueZabMessage(netMsg cxn.NetworkMessage) {
 	messageQueue.enqueue(netMsg)
-}
-
-func EmptyMessageQueue() {
-	for !messageQueue.isEmpty() {
-		msg, _ := messageQueue.dequeue()
-		ProcessZabMessage(msg)
-	}
 }
 
 // Process a Zab message received from the network.
@@ -409,6 +412,7 @@ func queueSend(zabMsg ZabMessage, isBroadcast bool, remote string) {
 		broadcast: isBroadcast,
 		target:    remote,
 	}
+	logger.Debug(fmt.Sprint("Enqueueing message to ", toSendChan, ", broadcast: ", isBroadcast))
 	toSendChan <- toSendMsg
 }
 

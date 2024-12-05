@@ -80,7 +80,9 @@ func SendMessage(toSend NetworkMessage) error {
 	}
 	msg = append(msg, '\n')
 	if ok {
-		sendConnection.SetDeadline(time.Now().Add(time.Duration(tcpWriteTimeoutSeconds) * time.Second))
+		deadline := time.Now().Add(time.Duration(tcpWriteTimeoutSeconds) * time.Second)
+		sendConnection.SetDeadline(deadline)
+		logger.Debug(fmt.Sprint("Deadline of send set to ", deadline))
 		_, err = sendConnection.Write(msg)
 		logger.Debug(fmt.Sprint("Sending message to ", remote, "..."))
 		if err != nil {
@@ -300,7 +302,7 @@ func attemptConnection(serverName string, successChan chan NamedConnection) bool
 	// Channel may be closed; in that case, ignore the panic.
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Warn("Connection failed with a panic:", r)
+			logger.Warn(fmt.Sprint("Connection failed with a panic: ", r))
 		}
 	}()
 
@@ -317,7 +319,7 @@ func attemptConnection(serverName string, successChan chan NamedConnection) bool
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				logger.Warn("Succeeded but channel is closed: ", r)
+				logger.Warn(fmt.Sprint("Succeeded but channel is closed: ", r))
 			}
 		}()
 		successChan <- NamedConnection{
@@ -334,6 +336,11 @@ func attemptConnection(serverName string, successChan chan NamedConnection) bool
 // already exists another connection to the same server, the old one is deleted and replaced with
 // the new one.
 func writeConnectionManager(newConnectionChan chan NamedConnection) {
+	defer func() {
+		for _, conn := range ipToConnectionWrite.connMap {
+			conn.Close()
+		}
+	}()
 	for newConnection := range newConnectionChan {
 		// A new connection has come in. If we already have a connection to this node, close the old one and replace it.
 		conn, ok := ipToConnectionWrite.load(newConnection.Remote)
@@ -350,6 +357,11 @@ func writeConnectionManager(newConnectionChan chan NamedConnection) {
 }
 
 func readConnectionManager(receiveChannel chan NetworkMessage, newConnectionChan chan net.Conn) {
+	defer func() {
+		for _, conn := range ipToConnectionRead.connMap {
+			conn.Close()
+		}
+	}()
 	for newConnection := range newConnectionChan {
 		// A new connection has come in. If we already have a connection to this node, close the old one and replace it.
 		conn, ok := ipToConnectionRead.load(newConnection.RemoteAddr().String())

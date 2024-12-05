@@ -3,7 +3,6 @@ package connectionManager
 import (
 	"net"
 	"sync"
-	"time"
 )
 
 type SafeConnectionMap struct {
@@ -13,9 +12,7 @@ type SafeConnectionMap struct {
 
 func (smap *SafeConnectionMap) store(key string, val net.Conn) {
 	smap.Lock()
-	defer smap.Unlock()
-	val.SetReadDeadline(time.Time{})
-	val.SetWriteDeadline(time.Now().Add(time.Duration(tcpWriteTimeoutSeconds) * time.Second))
+	smap.Unlock()
 	smap.connMap[key] = val
 }
 

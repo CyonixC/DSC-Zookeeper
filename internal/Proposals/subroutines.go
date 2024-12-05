@@ -1,5 +1,10 @@
 package proposals
 
+import (
+	"fmt"
+	"local/zookeeper/internal/logger"
+)
+
 // This file defines definitions for goroutines meant to be run constantly in
 // the background. The functions are defined for tasks which must be completed
 // sequentially.
@@ -20,17 +25,23 @@ func proposalWriter(newProposalChan chan Proposal) {
 func messageSender(toSendChan chan ToSendMessage) {
 	for toSend := range toSendChan {
 		if toSend.broadcast {
+			logger.Debug(fmt.Sprint("Broadcasting message"))
 			broadcastZabMessage(toSend.msg)
+			logger.Debug(fmt.Sprint("Broadcasted message"))
 		} else {
+			logger.Debug(fmt.Sprint("Sending message to ", toSend.target))
 			sendZabMessage(toSend.target, toSend.msg)
+			logger.Debug(fmt.Sprint("Sent message to ", toSend.target))
 		}
 	}
 }
 
-// func messageReceiver(recv_channel chan cxn.NetworkMessage) {
-// 	for msg := range recv_channel {
-// 		if strings.HasPrefix(msg.Remote, "server") {
-// 			processZabMessage(msg)
-// 		}
-// 	}
-// }
+func messageProcessor() {
+	for {
+		for messageQueue.isEmpty() || !enabled {
+			continue
+		}
+		msg, _ := messageQueue.dequeue()
+		ProcessZabMessage(msg)
+	}
+}
