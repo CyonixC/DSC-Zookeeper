@@ -142,7 +142,7 @@ func HandleDiscoveryMessage(ring_structure []string, message MessageWrapper) {
 	isComplete := Pass_message_down_ring(ring_structure, message)
 	if isComplete {
 		logger.Info(fmt.Sprintf("Completed Discovery in %s: %v", nodeIP, message.Visited_Nodes))
-		if len(message.Visited_Nodes) >= len(Addresses)/2 {
+		if len(message.Visited_Nodes) >= (len(Addresses)/2)+1 {
 			electedCoordinator := getCorrespondingValue(message.ZxId_List, message.Visited_Nodes)
 			logger.Info(fmt.Sprintf("New Coordinator: %v", electedCoordinator))
 			ring_struct := ReorderRing(message.Visited_Nodes, nodeIP)
