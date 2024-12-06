@@ -26,11 +26,11 @@ var local_sessions map[string]string
 func ServerMain() {
 	pending_requests = make((map[int]connectionManager.NetworkMessage))
 	local_sessions = make((map[string]string))
-	election.ElectionInit()
+
 	recv, failedSends := connectionManager.Init()
 	go monitorConnectionToClient(failedSends)
-	committed, denied := proposals.Init(znode.Check)
-
+	committed, denied, counter := proposals.Init(znode.Check)
+	election.ElectionInit(counter)
 	//TODO call election instead
 	election.InitiateElectionDiscovery()
 	if election.Coordinator.GetCoordinator() == configReader.GetName() {
