@@ -124,9 +124,10 @@ func SendMessage(toSend NetworkMessage) error {
 func Broadcast(toSend []byte, msgType NetMessageType) {
 	logger.Debug("Broadcasting message...")
 	ipToConnectionWrite.RLock()
-	defer ipToConnectionWrite.RUnlock()
+	connMap := ipToConnectionWrite.connMap
+	ipToConnectionWrite.RUnlock()
 	var wg sync.WaitGroup
-	for addr := range ipToConnectionWrite.connMap {
+	for addr := range connMap {
 		if addr == configReader.GetName() {
 			continue
 		}
@@ -144,10 +145,27 @@ func Broadcast(toSend []byte, msgType NetMessageType) {
 
 func ServerBroadcast(toSend []byte, msgType NetMessageType) {
 	logger.Debug("Broadcasting message to servers...")
-	ipToConnectionWrite.RLock()
-	defer ipToConnectionWrite.RUnlock()
 	var wg sync.WaitGroup
 	for _, name := range configReader.GetConfig().Servers {
+		if name == configReader.GetName() {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := SendMessage(NetworkMessage{name, msgType, toSend})
+			if err != nil {
+				logger.Error(fmt.Sprint("Error in server broadcast:", err))
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func CustomBroadcast(dests []string, toSend []byte, msgType NetMessageType) {
+	logger.Debug(fmt.Sprint("Broadcasting message to: ", dests))
+	var wg sync.WaitGroup
+	for _, name := range dests {
 		if name == configReader.GetName() {
 			continue
 		}
