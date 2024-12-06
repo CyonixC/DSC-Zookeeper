@@ -49,9 +49,6 @@ func main() {
 		}
 	}()
 	success, rejected, counter := proposals.Init(randomPassFail)
-	if counter == nil {
-		logger.Fatal("Failed")
-	}
 	election.ElectionInit(counter)
 	if configReader.GetName() == "server1" {
 		election.InitiateElectionDiscovery()
@@ -79,7 +76,7 @@ func main() {
 	}()
 
 	for i := 0; ; i++ {
-		time.Sleep(time.Second * 5)
+		time.Sleep(time.Millisecond * 500)
 		proposals.SendWriteRequest([]byte(fmt.Sprint("Test", i)), i)
 	}
 }
