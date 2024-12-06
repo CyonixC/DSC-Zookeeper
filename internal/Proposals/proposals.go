@@ -449,5 +449,5 @@ func broadcastZabMessage(msg ZabMessage) {
 		log.Fatal(err)
 		return
 	}
-	cxn.ServerBroadcast(serial, cxn.ZAB)
+	cxn.CustomBroadcast(election.Addresses, serial, cxn.ZAB)
 }
