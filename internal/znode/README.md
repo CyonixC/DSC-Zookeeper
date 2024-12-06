@@ -209,6 +209,16 @@ var exists bool
 exists= Exists_session(sessionid)
 ```
 
+Use `Get_sessions()` to get a list of (session id of ) active sessions
+Meant for new leader to start timers upon being elected
+Just a wrapper around the `GetChildren()` function
+
+```go
+var session_ids []string
+var err error
+session_ids, err = Get_sessions()
+```
+
 `Encode_create_sessions()` creates a write request to be sent to the leader.
 This initialises the session znode and must be used to establish a new session.
 Before using this, check to ensure it is a new session or it will error.
