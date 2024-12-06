@@ -76,7 +76,7 @@ func main() {
 	}()
 
 	for i := 0; ; i++ {
-		time.Sleep(time.Millisecond * 500)
+		time.Sleep(time.Second)
 		proposals.SendWriteRequest([]byte(fmt.Sprint("Test", i)), i)
 	}
 }
