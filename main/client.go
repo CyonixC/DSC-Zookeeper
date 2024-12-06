@@ -29,7 +29,8 @@ func ClientMain() {
 	for {
 		scanner.Scan()
 		command := strings.TrimSpace(scanner.Text())
-		switch command {
+		parts := strings.Split(command, " ")
+		switch parts[0] {
 		case "startsession":
 			//Look for available servers and connect to one
 			findLiveServer()
@@ -59,20 +60,14 @@ func ClientMain() {
 				logger.Error("There is no session ongoing to create")
 				continue
 			}
-			input := strings.TrimSpace(scanner.Text())
-			pathParts := strings.SplitN(input, " ", 2)
-			if len(pathParts) < 2 || strings.TrimSpace(pathParts[1]) == "" {
-				logger.Error("Error: Missing path and data for 'create' command")
+
+			if len(parts) != 3 {
+				logger.Error("Missing path and data for 'create' command")
 				continue
 			}
 
-			params := strings.SplitN(pathParts[1], " ", 2)
-			if len(params) < 2 {
-				logger.Error("Error: Missing data for 'create' command")
-				continue
-			}
-			path := strings.TrimSpace(params[0])
-			data := strings.TrimSpace(params[1])
+			path := strings.TrimSpace(parts[1])
+			data := strings.TrimSpace(parts[2])
 
 			msg := map[string]interface{}{
 				"message":    "CREATE",
@@ -191,7 +186,7 @@ func ClientMain() {
 				"path":    path,
 			}
 			SendJSONMessage(msg, connectedServer)
-		case "publish": // this is th read, dont write data to znode, znode tells u who to write just for coordiantiojn
+		case "publish": // this is the read, dont write data to znode, znode tells you who to write just for coordiantion
 			if connectedServer == "" {
 				fmt.Println("Error: Session has not started")
 				continue
@@ -284,7 +279,18 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 // If it is rejected, send another request with no session ID.
 // If no session ID is stored, store the new ID.
 func findLiveServer() bool {
-	for server := range config.Servers {
+	servers := config.Servers
+
+	//For debugging: reverse the list of servers so that client 1 connects to the leader
+	if os.Getenv("NAME") == "client1" {
+		reversed := make([]string, len(servers))
+		for i := 0; i < len(servers); i++ {
+			reversed[i] = servers[len(servers)-i-1]
+		}
+		servers = reversed
+	}
+
+	for server := range servers {
 		var msg interface{}
 		if sessionID == "" {
 			msg = map[string]interface{}{
