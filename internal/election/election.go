@@ -12,7 +12,7 @@ import (
 
 type MessageType int
 
-var addresses []string = configReader.GetConfig().Servers
+var Addresses []string = configReader.GetConfig().Servers
 var mu sync.Mutex
 
 const (
@@ -142,7 +142,7 @@ func HandleDiscoveryMessage(ring_structure []string, message MessageWrapper) {
 	isComplete := Pass_message_down_ring(ring_structure, message)
 	if isComplete {
 		logger.Info(fmt.Sprintf("Completed Discovery in %s: %v", nodeIP, message.Visited_Nodes))
-		if len(message.Visited_Nodes) >= len(addresses)/2 {
+		if len(message.Visited_Nodes) >= len(Addresses)/2 {
 			electedCoordinator := getCorrespondingValue(message.ZxId_List, message.Visited_Nodes)
 			logger.Info(fmt.Sprintf("New Coordinator: %v", electedCoordinator))
 			ring_struct := ReorderRing(message.Visited_Nodes, nodeIP)
@@ -155,7 +155,7 @@ func HandleDiscoveryMessage(ring_structure []string, message MessageWrapper) {
 }
 func InitiateElectionDiscovery() {
 	nodeIP := configReader.GetName()
-	initRing := ReorderRing(addresses, nodeIP)
+	initRing := ReorderRing(Addresses, nodeIP)
 	logger.Info(fmt.Sprintf("Node %s initiated election discovery\n", nodeIP))
 	initialContent := []string{}
 	StartRingMessage(initRing, initialContent, MessageTypeDiscovery)
@@ -179,19 +179,19 @@ func HandleMessage(messageWrapper MessageWrapper) bool {
 	nodeIP := configReader.GetName()
 	switch messageWrapper.Message_Type {
 	case MessageTypeDiscovery:
-		ring_structure := ReorderRing(addresses, nodeIP)
+		ring_structure := ReorderRing(Addresses, nodeIP)
 		HandleDiscoveryMessage(ring_structure, messageWrapper)
 		return true
 	case MessageTypeAnnouncement:
-		ring_structure := ReorderRing(addresses, nodeIP)
+		ring_structure := ReorderRing(Addresses, nodeIP)
 		newcoords := HandleAnnouncementMessage(ring_structure, messageWrapper)
 		Coordinator.setCoordinator(newcoords)
 		logger.Info(fmt.Sprint(nodeIP, " acknowledges new coordinator ", newcoords))
 		return false
 	case MessageTypeNewRing:
-		ring_structure := ReorderRing(addresses, nodeIP)
+		ring_structure := ReorderRing(Addresses, nodeIP)
 		updatedRing := HandleNewRingMessage(ring_structure, messageWrapper, nodeIP)
-		addresses = updatedRing
+		Addresses = updatedRing
 		logger.Info(fmt.Sprint("Updated ring structure for node ", nodeIP, updatedRing))
 		return false
 	default:
@@ -200,6 +200,6 @@ func HandleMessage(messageWrapper MessageWrapper) bool {
 }
 
 func ElectionInit(counter ZXIDRef) {
-	addresses = configReader.GetConfig().Servers
+	Addresses = configReader.GetConfig().Servers
 	zxidCounter = counter
 }
