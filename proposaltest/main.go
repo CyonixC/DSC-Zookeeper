@@ -24,7 +24,7 @@ func main() {
 			prp.ProcessZabMessage(network_msg)
 		}
 	}()
-	commitChan, denied := prp.Init(rejectAll)
+	commitChan, denied, _ := prp.Init(rejectAll)
 	go func() {
 		for str := range failed {
 			logger.Info("Failed to send to", str)
