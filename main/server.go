@@ -12,6 +12,7 @@ import (
 	"math/rand"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -41,8 +42,18 @@ func ServerMain() {
 	go committedListener(committed)
 	go deniedListener(denied)
 
-	//Heartbeat
-	// go serverHeartbeat()
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	go func() {
+		for range ticker.C {
+			// TODO: Fix this
+			// If server is coordinator:
+			// removeExpiredSessions()
+			// Else:
+			// sendSessionInfo()
+		}
+	}()
+
 }
 
 // Send unstrctured data to a client
@@ -98,8 +109,8 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					proposals.Continue()
 				}
 			}
-		
-		//Handle messages from client
+
+			//Handle messages from client
 		} else if network_msg.Type == connectionManager.CLIENTMSG {
 			var message interface{}
 			err := json.Unmarshal([]byte(network_msg.Message), &message)
@@ -209,10 +220,13 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				SendJSONMessageToClient(reply_msg, this_client)
 			}
 
-		//Handle ZAB messages from other server
+			//Handle ZAB messages from other server
 		} else if network_msg.Type == connectionManager.ZAB {
 			//Handle messages from other server
 			proposals.ProcessZabMessage(network_msg)
+		} else if network_msg.Type == connectionManager.HEARTBEAT {
+			//Handle heartbeats
+			recvSessionInfo(network_msg.Message)
 		}
 	}
 }
@@ -313,16 +327,96 @@ func monitorConnectionToClient(failedSends chan string) {
 		if exists {
 			delete(local_sessions, failedNode)
 		} else {
-			election.InitiateElectionDiscovery()
+			election.InitiateElectionDiscovery() //! Why can client connections trigger elections
 		}
 	}
 }
 
-// TODO: Heartbeat the leader every x seconds with local sessions
-func serverHeartbeat() {
-	for {
-		time.Sleep(time.Second * time.Duration(3))
-		data := []byte("HEARTBEAT")
-		connectionManager.ServerBroadcast(data, connectionManager.HEARTBEAT)
+type SessionInfo struct {
+	SessionIds []string `json:"session_ids"`
+}
+
+var session_id_to_timestamp = make(map[string]time.Time)
+var map_mu sync.Mutex
+
+const timeout time.Duration = 10 * time.Second
+
+// For servers. Send this every 5 seconds or something
+func sendSessionInfo() {
+	// TODO: Get all session_ids connected to this server
+	var session_ids []string = []string{"id1", "id2"}
+
+	session_info_json, err := json.Marshal(SessionInfo{
+		SessionIds: session_ids,
+	})
+
+	if err != nil {
+		logger.Error("Failed to encode json session info", err)
 	}
+
+	var network_msg connectionManager.NetworkMessage
+	network_msg.Type = connectionManager.HEARTBEAT
+	network_msg.Remote = election.Coordinator.GetCoordinator()
+	network_msg.Message = session_info_json
+
+	logger.Debug("Sending list of connection session_ids", session_ids)
+	err = connectionManager.SendMessage(network_msg)
+	if err != nil {
+		logger.Error("Failed to send message", err)
+	}
+}
+
+// For leader. Run it once when a server gets elected as leader
+func initializeMap() {
+	session_ids, err := znode.Get_sessions()
+	if err != nil {
+		logger.Error("Failed to get sessions from znode", err)
+	}
+
+	map_mu.Lock()
+	for _, session_id := range session_ids {
+		session_id_to_timestamp[session_id] = time.Now()
+	}
+	map_mu.Unlock()
+}
+
+// For leader
+func recvSessionInfo(session_info_json []byte) {
+	var session_info SessionInfo
+	err := json.Unmarshal(session_info_json, &session_info)
+
+	if err != nil {
+		logger.Error("Failed to decode json session info", err)
+	}
+
+	map_mu.Lock()
+	for _, session_id := range session_info.SessionIds {
+		session_id_to_timestamp[session_id] = time.Now()
+	}
+	map_mu.Unlock()
+
+}
+
+// For leader. Run this every 5 seconds or something
+func removeExpiredSessions() {
+	curr_time := time.Now()
+
+	map_mu.Lock()
+	for session_id, timestamp := range session_id_to_timestamp {
+		if curr_time.Sub(timestamp) < timeout {
+			continue
+		}
+
+		request, err := znode.Encode_delete_session(session_id)
+
+		if err != nil {
+			logger.Error("Error in deleting session:", err)
+		}
+
+		proposals.SendWriteRequest(request, generateUniqueRequestID())
+
+		logger.Debug("Deleting a timed-out session_id", session_id)
+		delete(session_id_to_timestamp, session_id)
+	}
+	map_mu.Unlock()
 }
