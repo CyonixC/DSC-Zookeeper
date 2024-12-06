@@ -11,6 +11,21 @@ const (
 	CLIENTMSG
 )
 
+func (n NetMessageType) ToStr() string {
+	switch n {
+	case ZAB:
+		return "ZAB"
+	case HEARTBEAT:
+		return "HEARTBEAT"
+	case ELECTION:
+		return "ELECTION"
+	case CLIENTMSG:
+		return "CLIENT_MSG"
+	default:
+		return ""
+	}
+}
+
 type NetworkMessage struct {
 	Remote  string
 	Type    NetMessageType

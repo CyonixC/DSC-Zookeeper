@@ -42,6 +42,9 @@ func messageProcessor() {
 			continue
 		}
 		msg, _ := messageQueue.dequeue()
+		logger.Debug(fmt.Sprint("Processing message: ", convertProposalToStr(msg)))
+		logger.Debug(fmt.Sprint("Queue state: ", queueStateToStr(&messageQueue)))
 		ProcessZabMessage(msg)
+		logger.Debug(fmt.Sprint("Processed ZAB message from ", msg.Remote))
 	}
 }

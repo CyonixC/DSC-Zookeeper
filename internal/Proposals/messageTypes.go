@@ -3,6 +3,9 @@ package proposals
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
+	connectionManager "local/zookeeper/internal/ConnectionManager"
+	"local/zookeeper/internal/logger"
 )
 
 // This file contains struct definitions for handling all messages exchanged in the Zab protocol.
@@ -112,4 +115,28 @@ func uint32ToBytes(num uint32) []byte {
 	bytes := make([]byte, 4)
 	binary.NativeEndian.PutUint32(bytes, num)
 	return bytes
+}
+
+func convertProposalToStr(nm connectionManager.NetworkMessage) string {
+	var zab ZabMessage
+	err := json.Unmarshal(nm.Message, &zab)
+	if err != nil {
+		logger.Error(fmt.Sprint("Failed to unmarshal json when converting to proposal"))
+	}
+	var prop Proposal
+	err = json.Unmarshal(zab.Content, &prop)
+	if err != nil {
+		logger.Error(fmt.Sprint("Failed to unmarshal json when converting to proposal"))
+	}
+	return fmt.Sprint(nm.Remote, ":", zab.ZabType.ToStr(), ";", prop.PropType.ToStr())
+}
+
+func queueStateToStr(proposals *SafeQueue[connectionManager.NetworkMessage]) string {
+	ret := "[ "
+	for _, p := range proposals.elements() {
+		ret += convertProposalToStr(p)
+		ret += " "
+	}
+	ret += "]"
+	return ret
 }

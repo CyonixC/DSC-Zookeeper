@@ -11,6 +11,12 @@ type SafeQueue[T any] struct {
 	items []T
 }
 
+func (q *SafeQueue[T]) elements() []T {
+	q.RLock()
+	defer q.RUnlock()
+	return q.items
+}
+
 // enqueue adds an element to the end of the queue
 func (q *SafeQueue[T]) enqueue(item T) {
 	q.Lock()
