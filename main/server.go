@@ -30,12 +30,11 @@ func ServerMain() {
 	recv, failedSends := connectionManager.Init()
 	go monitorConnectionToClient(failedSends)
 	committed, denied, counter := proposals.Init(znode.Check)
+
+	//Start election
+	proposals.Pause()
 	election.ElectionInit(counter)
-	//TODO call election instead
 	election.InitiateElectionDiscovery()
-	if election.Coordinator.GetCoordinator() == configReader.GetName() {
-		znode.Init_znode_cache()
-	}
 
 	//Listeners
 	go mainListener(recv)
@@ -84,7 +83,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 		this_client := network_msg.Remote
 		logger.Info(fmt.Sprint("Receive message from ", this_client))
 
-		//Handle messages from client
+		//Handle election messages
 		if network_msg.Type == connectionManager.ELECTION {
 			var messageWrapper election.MessageWrapper
 			err := json.Unmarshal(network_msg.Message, &messageWrapper)
@@ -92,11 +91,15 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				logger.Fatal(fmt.Sprint("Error unmarshalling message:", err))
 			}
 			electionstatus := election.HandleMessage(messageWrapper)
-			if electionstatus {
-				logger.Info(fmt.Sprint("Election Ongoing"))
-			} else {
-				logger.Info(fmt.Sprint("Election Completed"))
+			if !electionstatus {
+				logger.Info("Election Completed")
+				if election.Coordinator.GetCoordinator() == configReader.GetName() {
+					znode.Init_znode_cache()
+					proposals.Continue()
+				}
 			}
+		
+		//Handle messages from client
 		} else if network_msg.Type == connectionManager.CLIENTMSG {
 			var message interface{}
 			err := json.Unmarshal([]byte(network_msg.Message), &message)
@@ -138,7 +141,6 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					}
 					SendJSONMessageToClient(reply_msg, this_client)
 				}
-
 				//TODO add znode.Update_watch_cache()
 
 			case "END_SESSION":
@@ -207,7 +209,8 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				SendJSONMessageToClient(reply_msg, this_client)
 			}
 
-		} else {
+		//Handle ZAB messages from other server
+		} else if network_msg.Type == connectionManager.ZAB {
 			//Handle messages from other server
 			proposals.ProcessZabMessage(network_msg)
 		}

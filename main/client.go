@@ -13,7 +13,6 @@ import (
 
 var connectedServer string
 var sessionID string
-var children string
 var exist bool
 var data string
 
@@ -223,7 +222,7 @@ func SendJSONMessage(jsonData interface{}, server string) error {
 		return err
 	}
 
-	err = connectionManager.SendMessage(connectionManager.NetworkMessage{Remote: server, Message: byteData})
+	err = connectionManager.SendMessage(connectionManager.NetworkMessage{Remote: server, Type: connectionManager.CLIENTMSG, Message: byteData})
 	if err != nil {
 		logger.Error("Error sending message to server, please try again.")
 		return err
