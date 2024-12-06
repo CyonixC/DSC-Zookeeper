@@ -23,6 +23,16 @@ var pending_requests map[int]connectionManager.NetworkMessage
 // Add to this map when receiving a START_SESSION or REESTABLISH_SESSION, remove from this map on END_SESSION or when detect TCP closed.
 var local_sessions map[string]string
 
+type SessionInfo struct {
+	SessionIds []string `json:"session_ids"`
+}
+
+var session_id_to_timestamp = make(map[string]time.Time)
+var map_mu sync.Mutex
+
+// Time we give the client to reconnect to another server if its current server crashed.
+const reconnect_timeout time.Duration = 10 * time.Second
+
 // Main entry for server
 func ServerMain() {
 	pending_requests = make((map[int]connectionManager.NetworkMessage))
@@ -46,11 +56,11 @@ func ServerMain() {
 	defer ticker.Stop()
 	go func() {
 		for range ticker.C {
-			// TODO: Fix this
-			// If server is coordinator:
-			// removeExpiredSessions()
-			// Else:
-			// sendSessionInfo()
+			if configReader.GetName() == election.Coordinator.GetCoordinator() { // If this server is the coordinator
+				removeExpiredSessions()
+			} else {
+				sendSessionInfo()
+			}
 		}
 	}()
 
@@ -326,25 +336,18 @@ func monitorConnectionToClient(failedSends chan string) {
 		_, exists := local_sessions[failedNode]
 		if exists {
 			delete(local_sessions, failedNode)
-		} else {
-			election.InitiateElectionDiscovery() //! Why can client connections trigger elections
+			// TODO: Remove ephemeral nodes
 		}
 	}
 }
 
-type SessionInfo struct {
-	SessionIds []string `json:"session_ids"`
-}
-
-var session_id_to_timestamp = make(map[string]time.Time)
-var map_mu sync.Mutex
-
-const timeout time.Duration = 10 * time.Second
-
 // For servers. Send this every 5 seconds or something
 func sendSessionInfo() {
 	// TODO: Get all session_ids connected to this server
-	var session_ids []string = []string{"id1", "id2"}
+	var session_ids []string
+	for _, session_id := range local_sessions {
+		session_ids = append(session_ids, session_id)
+	}
 
 	session_info_json, err := json.Marshal(SessionInfo{
 		SessionIds: session_ids,
@@ -403,7 +406,7 @@ func removeExpiredSessions() {
 
 	map_mu.Lock()
 	for session_id, timestamp := range session_id_to_timestamp {
-		if curr_time.Sub(timestamp) < timeout {
+		if curr_time.Sub(timestamp) < reconnect_timeout {
 			continue
 		}
 
