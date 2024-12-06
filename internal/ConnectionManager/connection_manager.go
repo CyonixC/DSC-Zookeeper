@@ -80,7 +80,7 @@ func SendMessage(toSend NetworkMessage) error {
 	}
 	msg = append(msg, '\n')
 	if ok {
-		deadline := time.Now().Add(time.Duration(tcpWriteTimeoutSeconds) * time.Second)
+		deadline := time.Now().Add(tcpWriteTimeout)
 		sendConnection.SetDeadline(deadline)
 		logger.Debug(fmt.Sprint("Deadline of send set to ", deadline))
 		_, err = sendConnection.Write(msg)
@@ -102,7 +102,7 @@ func SendMessage(toSend NetworkMessage) error {
 		if newConnection.Connection != nil {
 			logger.Debug(fmt.Sprint("Connection attempt to ", remote, " was successful"))
 			newWriteChan <- newConnection
-			newConnection.Connection.SetDeadline(time.Now().Add(time.Duration(tcpRetryConnectionTimeoutSeconds) * time.Second))
+			newConnection.Connection.SetDeadline(time.Now().Add(tcpWriteTimeout))
 			_, err = newConnection.Connection.Write(msg)
 			logger.Debug(fmt.Sprint("Sending message to ", remote, "..."))
 			if err != nil {
@@ -127,6 +127,9 @@ func Broadcast(toSend []byte, msgType NetMessageType) {
 	defer ipToConnectionWrite.RUnlock()
 	var wg sync.WaitGroup
 	for addr := range ipToConnectionWrite.connMap {
+		if addr == configReader.GetName() {
+			continue
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -145,6 +148,9 @@ func ServerBroadcast(toSend []byte, msgType NetMessageType) {
 	defer ipToConnectionWrite.RUnlock()
 	var wg sync.WaitGroup
 	for _, name := range configReader.GetConfig().Servers {
+		if name == configReader.GetName() {
+			continue
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -195,7 +201,10 @@ func monitorConnection(connection net.Conn, id string) {
 
 // Start receiving data on the given connection. Any data is sent to recv_channel.
 func startReceiving(recv_channel chan NetworkMessage, connection net.Conn) {
-	defer connection.Close()
+	defer func() {
+		logger.Warn(fmt.Sprint("Read connection to ", connection.RemoteAddr().String(), " closing"))
+		connection.Close()
+	}()
 	reader := bufio.NewReader(connection)
 	for {
 		// Read binary data into the buffer
@@ -216,7 +225,9 @@ func startReceiving(recv_channel chan NetworkMessage, connection net.Conn) {
 		if err != nil {
 			logger.Fatal(fmt.Sprint("Could not convert received message to JSON: ", string(msg[:len(msg)-1])))
 		}
+		logger.Debug(fmt.Sprint("Received message from ", connection.RemoteAddr().String(), " of type ", ret.Type.ToStr()))
 		recv_channel <- ret
+		logger.Debug(fmt.Sprint("Successfully reported message from ", connection.RemoteAddr().String(), " of type ", ret.Type.ToStr(), " to ", recv_channel))
 	}
 }
 
@@ -293,43 +304,53 @@ func connectToSystemServers(serverNames []string) {
 // Attempt to connect to the given server.
 func attemptConnection(serverName string, successChan chan NamedConnection) bool {
 	logger.Debug(fmt.Sprint("Attempting to connect to ", serverName))
+	connectionDeadline := time.Now().Add(tcpEstablishTimeout)
 
-	// Dial with timeout
-	timeout := tcpEstablishTimeout
-	deadline := time.Now().Add(timeout)
-	conn, err := net.DialTimeout("tcp", serverName+":8080", timeout)
+	for !time.Now().After(connectionDeadline) {
+		// Dial with timeout
+		timeout := tcpRetryConnectionTimeout
+		deadline := time.Now().Add(timeout)
+		conn, err := net.DialTimeout("tcp", serverName+":8080", timeout)
 
+		if err != nil {
+			// Failed to connect, sleep until deadline and try again
+			if connectionDeadline.Before(deadline) {
+				// If the overall connection deadline is earlier than the next deadline, just break
+				break
+			} else {
+				// Otherwise, sleep until the next deadline.
+				time.Sleep(time.Until(deadline))
+			}
+		} else {
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						logger.Warn(fmt.Sprint("Succeeded but channel is closed: ", r))
+					}
+				}()
+				successChan <- NamedConnection{
+					Remote:     serverName,
+					Connection: conn,
+				}
+			}()
+			logger.Debug(fmt.Sprint("Successfully connected to ", serverName))
+			go monitorConnection(conn, serverName)
+			return true
+		}
+
+	}
 	// Channel may be closed; in that case, ignore the panic.
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Warn(fmt.Sprint("Connection failed with a panic: ", r))
 		}
 	}()
-
-	if err != nil {
-		time.Sleep(time.Until(deadline))
-		// Failed to connect, return nil
-		logger.Debug(fmt.Sprint("Failed to connect to ", serverName, ": ", err, ". Reporting to channel ", successChan))
-		successChan <- NamedConnection{
-			Remote:     serverName,
-			Connection: nil,
-		}
-		return false
+	logger.Debug(fmt.Sprint("Failed to connect to ", serverName, ". Reporting to channel ", successChan))
+	successChan <- NamedConnection{
+		Remote:     serverName,
+		Connection: nil,
 	}
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Warn(fmt.Sprint("Succeeded but channel is closed: ", r))
-			}
-		}()
-		successChan <- NamedConnection{
-			Remote:     serverName,
-			Connection: conn,
-		}
-	}()
-	logger.Debug(fmt.Sprint("Successfully connected to ", serverName))
-	go monitorConnection(conn, serverName)
-	return true
+	return false
 }
 
 // Runs in the background to log new write connections. If a new one is established while there
