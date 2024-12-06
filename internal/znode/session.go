@@ -23,6 +23,11 @@ func Exists_session(sessionid string) bool {
 	return existsZnode(sessionpath)
 }
 
+// return list of all sessionids
+func Get_sessions() ([]string, error) {
+	return GetChildren(sessionDir)
+}
+
 // Encode_create_session is a wrapper that calls Encode_create to create a session znode
 func Encode_create_session(sessionid string, timeout int) ([]byte, error) {
 	sessionpath := filepath.Join(sessionDir, sessionid)
