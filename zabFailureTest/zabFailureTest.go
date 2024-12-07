@@ -58,6 +58,7 @@ func main() {
 		for f := range failed {
 			logger.Error(fmt.Sprint("Failed to send to ", f))
 			if f == election.Coordinator.GetCoordinator() {
+				proposals.Pause()
 				go election.InitiateElectionDiscovery()
 			}
 		}
@@ -76,7 +77,7 @@ func main() {
 	}()
 
 	for i := 0; ; i++ {
-		time.Sleep(time.Second)
+		time.Sleep(time.Second * 2)
 		proposals.SendWriteRequest([]byte(fmt.Sprint("Test", i)), i)
 	}
 }

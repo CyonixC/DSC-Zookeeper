@@ -10,26 +10,32 @@ import (
 	"local/zookeeper/internal/election"
 	"local/zookeeper/internal/logger"
 	"log"
-	"os"
 )
 
 var n_systems int
 
-var zxidCounter ZXIDCounter
-var ackCounter = AckCounter{ackTracker: make(map[uint32]int)}
-var proposalsQueue SafeQueue[Proposal]
-var syncTrack SyncTracker
-var messageQueue SafeQueue[cxn.NetworkMessage]
+var zxidCounter ZXIDCounter                                   // tracker for current zxid label
+var ackCounter = AckCounter{ackTracker: make(map[uint32]int)} // map from zxid to number of acks received
+var proposalsQueue SafeQueue[Proposal]                        // queue of proposals which have yet to be acked
+var syncTrack SyncTracker                                     // tracker for non-leaders to track their sync status
+var syncResponseTracker SafeCounter                           // counter for leader to count number of sync responses
+var messageQueue SafeQueue[cxn.NetworkMessage]                // queue to hold incoming messages to be processed
+var requestQueue SafeQueue[ZabMessage]                        // queue to hold outgoing requests to be sent
+var holdingRequestsQueue SafeQueue[cxn.NetworkMessage]        // queue to hold incoming new requests to be processed, while sync process is ongoing
+var sendingQueue SafeQueue[ToSendMessage]                     // queue to hold the outgoing messages to be sent
+var currentSync Proposal                                      // holder for leader to track currently active sync
+var syncID int                                                // jank ID system to prevent syncTimeout from timing out a different sync session
 
 var newProposalChan = make(chan Proposal, 10)
 var toCommitChan = make(chan Request, 10)
-var toSendChan = make(chan ToSendMessage, 10)
 var failedRequestChan = make(chan Request)
 
 type checkFunction func([]byte) ([]byte, error)
 
 var requestChecker checkFunction
-var enabled bool
+var requestsEnabled bool
+var requestsProcessingEnabled bool
+var syncing bool = false
 
 // Initialise the background goroutines for handling proposals. This Init function takes:
 // - A channel which NetworkMessages arrive on from the network
@@ -37,8 +43,9 @@ var enabled bool
 // the check fails.
 func Init(check checkFunction) (committed chan Request, denied chan Request, counter *ZXIDCounter) {
 	go proposalWriter(newProposalChan)
-	go messageSender(toSendChan)
+	go messageSender()
 	go messageProcessor()
+	go requestQueuer()
 	n_systems = len(configReader.GetConfig().Servers)
 	committed = toCommitChan
 	requestChecker = check
@@ -49,11 +56,42 @@ func Init(check checkFunction) (committed chan Request, denied chan Request, cou
 }
 
 func Pause() {
-	enabled = false
+	if !requestsEnabled {
+		// Requests alreaady disabled; just return
+		return
+	}
+	logger.Warn("Pausing processing and sending of new requests")
+	requestsEnabled = false
+	requestsProcessingEnabled = false
+
+	// Clear all non-request queues
+	logger.Warn(fmt.Sprint("Clearing processing queue: ", queueStateToStr(&messageQueue)))
+	messageQueue.clear()
+	logger.Warn(fmt.Sprint("Clearing send queue: ", sendQueueStateToStr(&sendingQueue)))
+	sendingQueue.clear()
+
+	// Don't need to reset the sync state. This will be done at the Continue side.
+	// Reset Sync state; don't touch the syncing variable because the NewLeader will check this.
+	// Remember to reset the syncing variable on Continue in case this node is not re-elected!
 }
 
+// This function is to be called when the election has completed. This will allow ZAB nodes to send requests.
 func Continue() {
-	enabled = true
+	if requestsEnabled {
+		// Requests already enabled; just return
+		return
+	}
+	logger.Warn("Enabling sending of new requests")
+	requestsEnabled = true
+	// Enabling so it doesn't cause problems in the future. Won't affect the current epoch since only the
+	// coordinator should get any request messages.
+	if election.Coordinator.GetCoordinator() != configReader.GetName() {
+		logger.Warn("Enabling processing of new requests")
+		requestsProcessingEnabled = true
+		syncing = false // If the node is not a coordinator, this should not be set.
+	} else {
+		SendNewLeader()
+	}
 }
 
 // Sends a new write request to a given machine.
@@ -67,7 +105,44 @@ func SendWriteRequest(content []byte, requestNum int) {
 }
 
 func EnqueueZabMessage(netMsg cxn.NetworkMessage) {
+	var zm ZabMessage
+	if err := deserialise(netMsg.Message, &zm); err != nil {
+		logger.Error("Failed to unmarshal json when converting to Zab")
+		return
+	}
 	messageQueue.enqueue(netMsg)
+}
+
+// Should only be called by the coordinator. Starts a new epoch and the syncing process.
+func SendNewLeader() {
+	syncZxid := zxidCounter.GetLatestZXID()
+	if syncZxid == 0 {
+		// This is the first leader election; don't need to sync anything.
+		logger.Warn(fmt.Sprint("SendNewLeader called with ZXID = 0; don't start the syncing process."))
+		syncing = false
+		requestsProcessingEnabled = true
+		return
+	}
+	prop := Proposal{}
+	if !syncing {
+		// Only increment the epoch if there is not an active sync session.
+		epoch, count := zxidCounter.incEpoch()
+		prop = Proposal{
+			PropType: NewLeader,
+			EpochNum: epoch,
+			CountNum: count,
+			Content:  uint32ToBytes(syncZxid),
+		}
+		currentSync = prop
+	} else {
+		prop = currentSync
+	}
+	syncing = true
+	syncID++
+	syncResponseTracker.Set(len(election.Addresses) - 1)
+	logger.Info(fmt.Sprint("New sync with ZXID ", syncZxid, ", setting counter to ", syncResponseTracker.count))
+	queueWriteProposal(prop)
+	broadcastProposal(prop)
 }
 
 // Process a Zab message received from the network.
@@ -88,7 +163,15 @@ func ProcessZabMessage(netMsg cxn.NetworkMessage) {
 	case Req:
 		var req Request
 		deserialise(msg.Content, &req)
-		processRequest(req, netMsg.Remote)
+		if requestsProcessingEnabled || req.ReqType == Sync {
+			// Allow Sync requests to be processed
+			processRequest(req, netMsg.Remote)
+		} else {
+			// if it's a write request, store the request to be processed later.
+			logger.Debug(fmt.Sprint("Enqueueing message to the holding queue: ", convertZabToStr(msg)))
+			holdingRequestsQueue.enqueue(netMsg)
+			logger.Debug(fmt.Sprint("Holding queue state: ", queueStateToStr(&holdingRequestsQueue)))
+		}
 	case Prop:
 		var prop Proposal
 		deserialise(msg.Content, &prop)
@@ -115,6 +198,7 @@ func processProposal(prop Proposal, source string, originalMsg ZabMessage) {
 		logger.Warn(fmt.Sprint("Received Proposal from ", source, ", which is not the coordinator. Ignoring..."))
 		return
 	}
+
 	logger.Debug(fmt.Sprint("Received Proposal of type ", prop.PropType.ToStr(), " from ", source))
 	switch prop.PropType {
 	case StateChange:
@@ -126,6 +210,10 @@ func processProposal(prop Proposal, source string, originalMsg ZabMessage) {
 	default:
 		logger.Fatal("Received proposal with unknown type")
 	}
+}
+
+func enqueueMessage(toSend ToSendMessage) {
+	sendingQueue.enqueue(toSend)
 }
 
 // Process a received StateChange proposal
@@ -144,7 +232,9 @@ func processStateChangeProposal(prop Proposal, source string, originalMsg ZabMes
 		// If synced, ack the NewLeader proposal.
 		currentZxid := getZXIDAsInt(epoch, count)
 		if zxidCap <= currentZxid {
+			logger.Debug("Finished SYNC process")
 			syncMsg := syncTrack.getStoredProposal()
+			syncTrack.deactivate()
 			ack := makeACK(syncMsg)
 			queueSend(ack, false, source)
 		}
@@ -152,6 +242,7 @@ func processStateChangeProposal(prop Proposal, source string, originalMsg ZabMes
 		// Otherwise, normal operation
 		ack := makeACK(originalMsg)
 		queueSend(ack, false, source)
+		queueWriteProposal(prop)
 		proposalsQueue.enqueue(prop)
 	}
 }
@@ -169,6 +260,9 @@ func processCommitProposal() {
 }
 
 func processNewLeaderProposal(prop Proposal, source string, originalMsg ZabMessage) {
+	// First, save the proposal
+	queueWriteProposal(prop)
+
 	// Immediately commit all held proposals
 	for !proposalsQueue.isEmpty() {
 		poppedProposal, _ := proposalsQueue.dequeue()
@@ -176,14 +270,16 @@ func processNewLeaderProposal(prop Proposal, source string, originalMsg ZabMessa
 	}
 
 	latestZxid := bytesToUint32(prop.Content)
-	currentEpoch, currentCount := zxidCounter.check()
-	currentZxid := getZXIDAsInt(currentEpoch, currentCount)
+	currentZxid := zxidCounter.GetLatestZXID()
 	// Already holding the latest proposal, just ACK and return.
 	if currentZxid == latestZxid {
+		logger.Debug("Received NewLeader but already up to date, ACKing the NewLeader")
 		ack := makeACK(originalMsg)
 		queueSend(ack, false, source)
+		return
 	}
 
+	logger.Debug(fmt.Sprint("Received NewLeader of ZXID ", latestZxid, " but current ZXID is ", currentZxid, "; sending Sync request"))
 	// Otherwise, need to get updates from the leader.
 	// Turn on Sync (autocommit) mode
 	syncTrack.newSync(latestZxid, originalMsg)
@@ -200,6 +296,26 @@ func processNewLeaderProposal(prop Proposal, source string, originalMsg ZabMessa
 // the number of ACKs has exceeded the majority.
 func processACK(prop Proposal) {
 	zxid := getZXIDAsInt(prop.EpochNum, prop.CountNum)
+	if prop.PropType == NewLeader {
+		// ACKing the NewLeader proposal
+		if !requestsProcessingEnabled && prop.CountNum == currentSync.CountNum && prop.EpochNum == currentSync.EpochNum {
+			// Sync currently active
+			syncResponseTracker.Decrement()
+			logger.Debug(fmt.Sprint("NewLeader ACK received, decrementing counter to ", syncResponseTracker.count))
+			if syncResponseTracker.count == 0 {
+				// Sync done
+				logger.Debug("Sync session completed, processing holding queue")
+				requestsProcessingEnabled = true
+				syncing = false
+				unloadHoldingQueue()
+			}
+		} else {
+			// Sync not active but ACK for NewLeader received
+			// TODO decide what happenes here. I'm just gonna ignore this for now.
+			logger.Warn(fmt.Sprint("Stale or unprompted ACK for NewLeader received for epoch ", prop.EpochNum, " (current epoch is ", currentSync.EpochNum, "). If the epochs are the same, sync timeout may be too short"))
+			return
+		}
+	}
 	if ackCounter.incrementOrRemove(zxid, n_systems/2) {
 		processCommitProposal()
 		broadcastCommit()
@@ -231,7 +347,7 @@ func broadcastCommit() {
 // If it is a SYNC request, read the sent ZXID and send all proposals from that ZXID onwards.
 // If the request check with the znode cache fails, send an error message or just return false if on the same machine.
 func processRequest(req Request, remoteID string) error {
-	name := os.Getenv("NAME")
+	name := configReader.GetName()
 	switch req.ReqType {
 	case Write:
 		updatedReq, err := requestChecker(req.Content)
@@ -276,17 +392,26 @@ func processRequest(req Request, remoteID string) error {
 			newReqJson,
 		}
 		proposalsQueue.enqueue(prop)
-		logger.Debug(fmt.Sprint("Request processed successfully, broadcasting as Proposal #", zxid))
+		logger.Info(fmt.Sprint("Request processed successfully, broadcasting as Proposal #", zxid))
 		broadcastProposal(prop)
 	case Sync:
+		// New sync server
 		// Don't check coodinator status, just send to make it simple
 		highestEpoch, highestCount := zxidCounter.check()
 		sentzxid := bytesToUint32(req.Content)
 		sentEpoch, count := decomposeZXID(sentzxid)
+		logger.Info(fmt.Sprint("Got sync request with epoch ", sentEpoch, ", and count ", count))
+		// if sentEpoch != currentSync.EpochNum {
+		// 	logger.Debug(fmt.Sprint("Sync request is for a stale sync, current epoch is", currentSync.EpochNum, "; ignoring it."))
+		// 	return nil
+		// }
+		// syncResponseTracker.Decrement()
+		// logger.Info(fmt.Sprint("Decrementing sync counter to ", syncResponseTracker.count))
 
 		// Sent epoch shouldn't be more than the current one.
 		if sentEpoch > highestEpoch {
 			replySyncRequestError(req, remoteID)
+			return nil
 		}
 
 		// Need to send all proposals from the sync request number onwards.
@@ -295,7 +420,7 @@ func processRequest(req Request, remoteID string) error {
 			for epoch := sentEpoch; epoch < highestEpoch; epoch++ {
 				numProposals, err := getEpochHighestCount(epoch)
 				if err != nil {
-					logger.Error(fmt.Sprint("Failed to get ZXID from proposal store ", err))
+					logger.Error(fmt.Sprint("Failed to get ZXID from proposal store:", err))
 					replySyncRequestError(req, remoteID)
 				}
 
@@ -388,12 +513,6 @@ func makeACK(msg ZabMessage) (ack ZabMessage) {
 // If a machine attempts to send a request to its own IP address, the request is immediately
 // processed instead of being sent through the network.
 func sendRequest(req Request) {
-	name := os.Getenv("NAME")
-	if election.Coordinator.GetCoordinator() == name {
-		processRequest(req, name)
-		return
-	}
-
 	serial, err := json.Marshal(req)
 	if err != nil {
 		log.Fatal(err)
@@ -407,13 +526,28 @@ func sendRequest(req Request) {
 }
 
 func queueSend(zabMsg ZabMessage, isBroadcast bool, remote string) {
+	if configReader.GetName() == remote {
+		// If the message is directed to itself, directly enqueue the message instead of sending it through the network.
+		content, err := json.Marshal(zabMsg)
+		if err != nil {
+			logger.Fatal("Failed to marshal ZAB message!")
+		}
+		nm := cxn.NetworkMessage{
+			Remote:  configReader.GetName(),
+			Type:    cxn.ZAB,
+			Message: content,
+		}
+		EnqueueZabMessage(nm)
+		return
+	}
 	toSendMsg := ToSendMessage{
 		msg:       zabMsg,
 		broadcast: isBroadcast,
 		target:    remote,
 	}
-	logger.Debug(fmt.Sprint("Enqueueing message to ", toSendChan, ", broadcast: ", isBroadcast))
-	toSendChan <- toSendMsg
+	logger.Debug(fmt.Sprint("Enqueueing send message: ", convertZabToStr(zabMsg)))
+	enqueueMessage(toSendMsg)
+	logger.Debug(fmt.Sprint("Send queue state: ", sendQueueStateToStr(&sendingQueue)))
 }
 
 func queueWriteProposal(prop Proposal) {

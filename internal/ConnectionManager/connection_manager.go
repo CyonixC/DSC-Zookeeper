@@ -82,7 +82,6 @@ func SendMessage(toSend NetworkMessage) error {
 	if ok {
 		deadline := time.Now().Add(tcpWriteTimeout)
 		sendConnection.SetDeadline(deadline)
-		logger.Debug(fmt.Sprint("Deadline of send set to ", deadline))
 		_, err = sendConnection.Write(msg)
 		logger.Debug(fmt.Sprint("Sending message to ", remote, "..."))
 		if err != nil {
@@ -245,7 +244,6 @@ func startReceiving(recv_channel chan NetworkMessage, connection net.Conn) {
 		}
 		logger.Debug(fmt.Sprint("Received message from ", connection.RemoteAddr().String(), " of type ", ret.Type.ToStr()))
 		recv_channel <- ret
-		logger.Debug(fmt.Sprint("Successfully reported message from ", connection.RemoteAddr().String(), " of type ", ret.Type.ToStr(), " to ", recv_channel))
 	}
 }
 
@@ -363,7 +361,6 @@ func attemptConnection(serverName string, successChan chan NamedConnection) bool
 			logger.Warn(fmt.Sprint("Connection failed with a panic: ", r))
 		}
 	}()
-	logger.Debug(fmt.Sprint("Failed to connect to ", serverName, ". Reporting to channel ", successChan))
 	successChan <- NamedConnection{
 		Remote:     serverName,
 		Connection: nil,

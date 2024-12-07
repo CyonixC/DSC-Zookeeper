@@ -187,7 +187,7 @@ func HandleMessage(messageWrapper MessageWrapper) bool {
 		newcoords := HandleAnnouncementMessage(ring_structure, messageWrapper)
 		Coordinator.setCoordinator(newcoords)
 		logger.Info(fmt.Sprint(nodeIP, " acknowledges new coordinator ", newcoords))
-		return false
+		return true
 	case MessageTypeNewRing:
 		ring_structure := ReorderRing(Addresses, nodeIP)
 		updatedRing := HandleNewRingMessage(ring_structure, messageWrapper, nodeIP)

@@ -61,3 +61,9 @@ func (q *SafeQueue[T]) size() int {
 	defer q.RUnlock()
 	return len(q.items)
 }
+
+func (q *SafeQueue[T]) clear() {
+	q.Lock()
+	defer q.Unlock()
+	q.items = nil
+}

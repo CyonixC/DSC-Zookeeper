@@ -83,6 +83,17 @@ const (
 	Write
 )
 
+func (r RequestType) ToStr() string {
+	switch r {
+	case Sync:
+		return "Sync"
+	case Write:
+		return "Write"
+	default:
+		return ""
+	}
+}
+
 type Deserialisable interface {
 	ZabMessage | Proposal | Request
 }
@@ -117,24 +128,65 @@ func uint32ToBytes(num uint32) []byte {
 	return bytes
 }
 
-func convertProposalToStr(nm connectionManager.NetworkMessage) string {
+func convertMessageToStr(nm connectionManager.NetworkMessage) string {
 	var zab ZabMessage
 	err := json.Unmarshal(nm.Message, &zab)
 	if err != nil {
-		logger.Error(fmt.Sprint("Failed to unmarshal json when converting to proposal"))
+		logger.Error(fmt.Sprint("Failed to unmarshal json when converting Zab to string"))
+		return ""
 	}
-	var prop Proposal
-	err = json.Unmarshal(zab.Content, &prop)
-	if err != nil {
-		logger.Error(fmt.Sprint("Failed to unmarshal json when converting to proposal"))
-	}
-	return fmt.Sprint(nm.Remote, ":", zab.ZabType.ToStr(), ";", prop.PropType.ToStr())
+	return fmt.Sprint(nm.Remote, ":", convertZabToStr(zab))
 }
 
-func queueStateToStr(proposals *SafeQueue[connectionManager.NetworkMessage]) string {
+func convertZabToStr(zab ZabMessage) string {
+	switch zab.ZabType {
+	case Req:
+		var req Request
+		if err := deserialise(zab.Content, &req); err != nil {
+			logger.Error("Failed to unmarshal json when converting Zab to string")
+		}
+		return fmt.Sprint(zab.ZabType.ToStr(), ";", req.ReqType.ToStr())
+	case Prop, ACK:
+		var prop Proposal
+		if err := deserialise(zab.Content, &prop); err != nil {
+			logger.Error("Failed to unmarshal json when converting Zab to string")
+		}
+		return fmt.Sprint(zab.ZabType.ToStr(), ";", prop.PropType.ToStr())
+	case Err, SyncErr:
+		return fmt.Sprint(zab.ZabType.ToStr())
+	default:
+		return ""
+	}
+}
+
+func queueStateToStr(msgQ *SafeQueue[connectionManager.NetworkMessage]) string {
 	ret := "[ "
-	for _, p := range proposals.elements() {
-		ret += convertProposalToStr(p)
+	for _, p := range msgQ.elements() {
+		ret += convertMessageToStr(p)
+		ret += " "
+	}
+	ret += "]"
+	return ret
+}
+
+func zabQueueStateToStr(zabQ *SafeQueue[ZabMessage]) string {
+	ret := "[ "
+	for _, p := range zabQ.elements() {
+		ret += convertZabToStr(p)
+		ret += " "
+	}
+	ret += "]"
+	return ret
+}
+
+func convertToSendToStr(toSend ToSendMessage) string {
+	return convertZabToStr(toSend.msg)
+}
+
+func sendQueueStateToStr(sendQ *SafeQueue[ToSendMessage]) string {
+	ret := "[ "
+	for _, p := range sendQ.elements() {
+		ret += convertToSendToStr(p)
 		ret += " "
 	}
 	ret += "]"
