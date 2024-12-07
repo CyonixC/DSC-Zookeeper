@@ -14,10 +14,12 @@ var connectedServer string
 var sessionID string
 var exist bool
 var data string
+var versions map[string]int
 
 // Main entry for client
 func ClientMain() {
 	recv, failedSends := connectionManager.Init()
+	versions = make(map[string]int)
 	go monitorConnectionToServer(failedSends)
 
 	//Main Listener
@@ -84,17 +86,16 @@ func ClientMain() {
 				continue
 			}
 
-			if len(parts) != 3 {
-				logger.Error("Missing path and version for 'delete' command")
+			if len(parts) != 2 {
+				logger.Error("Missing path for 'delete' command")
 				continue
 			}
 			path := strings.TrimSpace(parts[1])
-			version := strings.TrimSpace(parts[2])
 			msg := map[string]interface{}{
 				"message":    "DELETE",
 				"session_id": sessionID,
 				"path":       path,
-				"version":    version,
+				"version":    versions[path],
 			}
 			SendJSONMessage(msg, connectedServer)
 		case "setdata":
@@ -102,18 +103,17 @@ func ClientMain() {
 				fmt.Println("Error: Session has not started")
 				continue
 			}
-			if len(parts) != 4 {
-				logger.Error("Missing path, data and version for 'setdata' command")
+			if len(parts) != 3 {
+				logger.Error("Missing path and data'setdata' command")
 				continue
 			}
 			path := strings.TrimSpace(parts[1])
 			data := strings.TrimSpace(parts[2])
-			versionstr := strings.TrimSpace(parts[3])
 			msg := map[string]interface{}{
 				"message": "SETDATA",
 				"path":    path,
 				"data":    data,
-				"version": versionstr,
+				"version": versions[path],
 			}
 			SendJSONMessage(msg, connectedServer)
 		case "getchildren":
@@ -232,24 +232,35 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 			sessionID = ""
 			fmt.Println("Session ended successfully.")
 		case "CREATE_OK":
+			path := obj["path"].(string)
+			if _, exists := versions[path]; !exists {
+				versions[path] = 1
+			}
+
 			fmt.Println("Create Ok")
 		case "DELETE_OK":
+			path := obj["path"].(string)
+			delete(versions, path)
 			fmt.Println("Delete Ok")
 		case "SYNC_OK":
+			path := obj["path"].(string)
+			versions[path]++
 			fmt.Println("Sync Ok")
-		case "SETDATA":
-			fmt.Println("SetData Ok")
-		case "GETCHILDREN":
+		case "SETDATA_OK":
+			path := obj["path"].(string)
+			versions[path]++
+			fmt.Println("SetData Ok ", versions[path])
+		case "GETCHILDREN_OK":
 			children, err := obj["children"].([]string)
 			if err {
 				logger.Error("Invalid type for children: expected []string")
 				continue
 			}
 			logger.Info(fmt.Sprint("Children is ", children))
-		case "EXISTS":
+		case "EXISTS_OK":
 			exist = obj["exists"].(bool)
 			logger.Info(fmt.Sprint("It ", exist, "Exists"))
-		case "GETDATA":
+		case "GETDATA_OK":
 			jsonData, err := json.MarshalIndent(obj["znode"], "", "  ")
 			if err != nil {
 				fmt.Println("Error marshalling to JSON:", err)

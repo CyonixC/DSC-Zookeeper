@@ -191,8 +191,8 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				}
 				generateAndSendRequest(request, network_msg)
 			case "DELETE":
-				versionstr := obj["version"].(string)
-				version, err := strconv.Atoi(versionstr)
+				versionFloat := obj["version"].(float64)
+				version := int(versionFloat)
 				data, err := znode.Encode_delete(obj["path"].(string), version)
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
@@ -201,8 +201,8 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				generateAndSendRequest(data, network_msg)
 			case "SETDATA":
 				data := []byte(obj["data"].(string))
-				versionstr := obj["version"].(string)
-				version, err := strconv.Atoi(versionstr)
+				versionFloat := obj["version"].(float64)
+				version := int(versionFloat)
 				request, err := znode.Encode_setdata(obj["path"].(string), data, version)
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
@@ -216,14 +216,14 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				}
 				logger.Info(fmt.Sprint("Getting children"))
 				reply_msg := map[string]interface{}{
-					"message":  "GETCHILDREN",
+					"message":  "GETCHILDREN_OK",
 					"children": children,
 				}
 				SendJSONMessageToClient(reply_msg, this_client)
 			case "EXISTS":
 				exists := znode.Exists(obj["path"].(string))
 				reply_msg := map[string]interface{}{
-					"message": "EXISTS",
+					"message": "EXISTS_OK",
 					"exists":  exists,
 				}
 				SendJSONMessageToClient(reply_msg, this_client)
@@ -233,7 +233,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					logger.Error(fmt.Sprint("There is error in getdata"))
 				}
 				reply_msg := map[string]interface{}{
-					"message": "GETDATA",
+					"message": "GETDATA_OK",
 					"znode":   znode,
 				}
 				SendJSONMessageToClient(reply_msg, this_client)
@@ -285,18 +285,22 @@ func committedListener(committed_channel chan proposals.Request) {
 			case "CREATE":
 				reply_msg = map[string]interface{}{
 					"message": "CREATE_OK",
+					"path":    obj["path"],
 				}
 			case "DELETE":
 				reply_msg = map[string]interface{}{
 					"message": "DELETE_OK",
+					"path":    obj["path"],
 				}
 			case "SETDATA":
 				reply_msg = map[string]interface{}{
 					"message": "SETDATA_OK",
+					"path":    obj["path"],
 				}
 			case "SYNC":
 				reply_msg = map[string]interface{}{
 					"message": "SYNC_OK",
+					"path":    obj["path"],
 				}
 
 			}

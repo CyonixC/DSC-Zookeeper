@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7-labs
+SetData Ok# syntax=docker/dockerfile:1.7-labs
 
 FROM golang:1.23 AS build-stage
 
