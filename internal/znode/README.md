@@ -44,11 +44,14 @@ znode.Print_watch_cache
 `Update_watch_cache()` is used to populate the watch_cache from local storage.
 This is meant for when a client with an existing session establishes a new connection with the server.
 Will only add the watchflags for the specified sessions.
+Will also check to ensure versions match local, if any mismatch will return paths of mismatched (to inform client) and special write request to update session znode. (Triggered flags)
 
 ```go
 var sessionid string
+var request []byte
+var paths []string
 var err error
-err := znode.Update_watch_cache(sessionid)
+request, paths, err := znode.Update_watch_cache(sessionid)
 ```
 
 ## Encoding Write Requests
@@ -182,15 +185,15 @@ request, err = Encode_watch(sessionid, path, watch)
 Use `Check_watch()` after commiting a write request with `Write()`.
 This checks the cache for all sessions watching the updated znode.
 It will return an array of session ids, these are all the sessions this server handles and will need to notify that there has been a change to the watched znode.
-It will also return an array of requests to send to the leader to propogate the updated session info (remove triggered watch flag), just send them sequentially.
+It will also return a request to send to the leader to propogate the updated session info (remove triggered watch flag).
 
 paths should be returned by `Write()`.
 ```go
 var paths []string
-var requests [][]byte
+var request []byte
 var sessions []string
 var err error
-requests, sessions, err = Encode_watch(paths)
+request, sessions, err = Encode_watch(paths)
 ```
 
 ## Sessions

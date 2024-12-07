@@ -13,6 +13,7 @@ const sessionDir = "sessionDir"
 type Session struct {
 	Id             string
 	Watchlist      []string
+	Versionlist    []int
 	EphemeralNodes []string
 	Timeout        int
 }

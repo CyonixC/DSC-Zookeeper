@@ -12,7 +12,7 @@ import (
 
 // map of znode paths to sessions watching them
 // watch flags are used to signal to clients that a znode has been modified
-// watch flags are cleared after being read
+// watch flags are cleared after being readd
 var watchcache map[string][]string
 var watchinit bool = false
 
@@ -25,25 +25,53 @@ func Init_watch_cache() {
 
 // Update_watch_cache updates the watch cache with the watchlist of a session
 // Used either to init cache or when picking up an existing session
-func Update_watch_cache(sessionid string) error {
+func Update_watch_cache(sessionid string) ([]byte, []string, error) {
 	err := check_watch_init()
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	sessionpath := filepath.Join(sessionDir, sessionid)
 	session_znode, err := GetData(sessionpath)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	session_data := &Session{}
 	err = json.Unmarshal(session_znode.Data, session_data)
 	if err != nil {
-		return &CriticalError{"Crictial Error! session znode data is invalid"}
+		return nil, nil, &CriticalError{"Crictial Error! session znode data is invalid"}
 	}
-	for _, path := range session_data.Watchlist {
-		watchcache[path] = append(watchcache[path], sessionid)
+
+	paths := []string{}
+	updated_watchlist := []string{}
+	for i, path := range session_data.Watchlist {
+		//get latest version of znode to watch
+		znode, err := GetData(path)
+		if err != nil {
+			return nil, nil, err
+		}
+		//add to cache if version matches
+		if znode.Version == session_data.Versionlist[i] {
+			watchcache[path] = append(watchcache[path], sessionid)
+			updated_watchlist = append(updated_watchlist, path)
+		} else {
+			//else add path to list of paths to update client and remove from watchlist
+			paths = append(paths, path)
+		}
 	}
-	return nil
+	if len(updated_watchlist) > 0 {
+		session_data.Watchlist = updated_watchlist
+		session_znode.Data, err = json.Marshal(session_data)
+		if err != nil {
+			return nil, nil, err
+		}
+		data, err := Encode_setdata(sessionpath, session_znode.Data, session_znode.Version)
+		if err != nil {
+			return nil, nil, err
+		}
+		return data, paths, nil
+	} else {
+		return nil, nil, nil
+	}
 }
 
 // Encode_watch is a wrapper that calls Encode_setdata to update a session's watchlist
@@ -54,7 +82,7 @@ func Encode_watch(sessionid string, path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	//Get session znode locally and update its watchlist
+	//Get session znode locally
 	sessionpath := filepath.Join(sessionDir, sessionid)
 	session_znode, err := GetData(sessionpath)
 	if err != nil {
@@ -65,7 +93,15 @@ func Encode_watch(sessionid string, path string) ([]byte, error) {
 	if err != nil {
 		return nil, &CriticalError{"Crictial Error! session znode data is invalid"}
 	}
+	//update watchlist
 	session_data.Watchlist = append(session_data.Watchlist, path)
+	//get latest version of znode to watch
+	znode, err := GetData(path)
+	if err != nil {
+		return nil, err
+	}
+	//update versionlist
+	session_data.Versionlist = append(session_data.Versionlist, znode.Version)
 	//add session to watch cache
 	watchcache[path] = append(watchcache[path], sessionid)
 	session_znode.Data, err = json.Marshal(session_data)
@@ -81,7 +117,6 @@ func Encode_watch(sessionid string, path string) ([]byte, error) {
 // Returns requests to update watchlist for each session
 // Returns list of sessions that were watching the paths
 // Clears watchlist for each path
-// TODO figure out better system for storing watch info, avoid so many write requests
 func Check_watch(paths []string) ([]byte, []string, error) {
 	err := check_watch_init()
 	if err != nil {
@@ -96,7 +131,7 @@ func Check_watch(paths []string) ([]byte, []string, error) {
 		if len(watchcache[path]) > 0 {
 			temp_sessions = append(temp_sessions, watchcache[path]...)
 		}
-		//generate update watchlist for each znode session
+		//generate updated watchlist & versionlist for each znode session
 		for _, sessionid := range temp_sessions {
 			sessionpath := filepath.Join(sessionDir, sessionid)
 			session_znode, err := GetData(sessionpath)
@@ -111,6 +146,7 @@ func Check_watch(paths []string) ([]byte, []string, error) {
 			for i, watchpath := range session_data.Watchlist {
 				if watchpath == path {
 					session_data.Watchlist = append(session_data.Watchlist[:i], session_data.Watchlist[i+1:]...)
+					session_data.Versionlist = append(session_data.Versionlist[:i], session_data.Versionlist[i+1:]...)
 					session_znode.Data, err = json.Marshal(session_data)
 					if err != nil {
 						return nil, nil, err
