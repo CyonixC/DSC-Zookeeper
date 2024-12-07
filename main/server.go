@@ -10,7 +10,6 @@ import (
 	"local/zookeeper/internal/logger"
 	"local/zookeeper/internal/znode"
 	"math/rand"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,7 +28,7 @@ type SessionInfo struct {
 }
 
 var session_id_to_timestamp = make(map[string]time.Time)
-var map_mu sync.Mutex
+var sessid_to_ts_mu sync.Mutex
 
 // Time we give the client to reconnect to another server if its current server crashed.
 const reconnect_timeout time.Duration = 10 * time.Second
@@ -41,7 +40,6 @@ func ServerMain() {
 
 	recv, failedSends := connectionManager.Init()
 	go monitorConnectionToClient(failedSends)
-	go monitorConnectionToServer(failedSends)
 	committed, denied, counter := proposals.Init(znode.Check)
 
 	//Start election
@@ -55,7 +53,6 @@ func ServerMain() {
 	go deniedListener(denied)
 
 	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
 	go func() {
 		for range ticker.C {
 			if configReader.GetName() == election.Coordinator.GetCoordinator() { // If this server is the coordinator
@@ -119,6 +116,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				if election.Coordinator.GetCoordinator() == configReader.GetName() {
 					znode.Init_znode_cache()
 					proposals.Continue()
+					initializeMap()
 				}
 			}
 
@@ -133,9 +131,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 			logger.Info(fmt.Sprint("Map Data: ", message))
 
 			// Type assertion to work with the data
-			logger.Info("134")
 			obj := message.(map[string]interface{})
-			logger.Info("136")
 			switch obj["message"] {
 			case "START_SESSION":
 				var new_session_id string
@@ -167,6 +163,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					SendJSONMessageToClient(reply_msg, this_client)
 				}
 				//TODO add znode.Update_watch_cache()
+
 			case "END_SESSION":
 				data, err := znode.Encode_delete_session(obj["session_id"].(string))
 				if err != nil {
@@ -183,39 +180,26 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				logger.Info(fmt.Sprint("Sending sync request", obj["session_id"].(string), "to leader"))
 				generateAndSendRequest(data, network_msg)
 			case "CREATE":
-				strData := obj["data"].(string)
-				data := []byte(strData)
-
-				strEphermeal := obj["ephemeral"].(string)
-				ephemeral, err := strconv.ParseBool(strEphermeal)
-
-				strSequential := obj["sequential"].(string)
-				Sequential, err := strconv.ParseBool(strSequential)
-
-				request, err := znode.Encode_create(obj["path"].(string), data, ephemeral, Sequential, obj["session_id"].(string)) // where i get the sequential and ephermeral from
+				data, err := znode.Encode_create(obj["path"].(string), obj["data"].([]byte), true, true, obj["session_id"].(string)) // where i get the sequential and ephermeral from
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
-				generateAndSendRequest(request, network_msg)
+				logger.Info(fmt.Sprint("Sending create request", obj["data"].([]byte), " to leader"))
+				generateAndSendRequest(data, network_msg)
 			case "DELETE":
-				versionstr := obj["version"].(string)
-				version, err := strconv.Atoi(versionstr)
-				data, err := znode.Encode_delete(obj["path"].(string), version)
+				data, err := znode.Encode_delete(obj["path"].(string), obj["version"].((int)))
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
 				logger.Info(fmt.Sprint("Sending delete request"))
 				generateAndSendRequest(data, network_msg)
 			case "SETDATA":
-				strData := obj["data"].(string)
-				data := []byte(strData)
-				versionstr := obj["version"].(string)
-				version, err := strconv.Atoi(versionstr)
-				request, err := znode.Encode_setdata(obj["path"].(string), data, version)
+				data, err := znode.Encode_setdata(obj["path"].(string), obj["data"].([]byte), obj["version"].(int))
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
-				generateAndSendRequest(request, network_msg)
+				logger.Info(fmt.Sprint("Setting data"))
+				generateAndSendRequest(data, network_msg)
 			case "GETCHILDREN":
 				children, err := znode.GetChildren(obj["path"].(string))
 				if err != nil {
@@ -273,7 +257,6 @@ func committedListener(committed_channel chan proposals.Request) {
 			json.Unmarshal([]byte(original_message.Message), &message)
 			var reply_msg interface{}
 			obj := message.(map[string]interface{})
-			logger.Info("the obj is ", obj)
 			switch obj["message"] {
 			case "START_SESSION":
 				//Get session ID from filepath
@@ -290,22 +273,6 @@ func committedListener(committed_channel chan proposals.Request) {
 					"message": "END_SESSION_OK",
 				}
 				delete(local_sessions, original_message.Remote)
-			case "CREATE":
-				reply_msg = map[string]interface{}{
-					"message": "CREATE_OK",
-				}
-			case "DELETE":
-				reply_msg = map[string]interface{}{
-					"message": "DELETE_OK",
-				}
-			case "SYNC":
-				reply_msg = map[string]interface{}{
-					"message": "SYNC_OK",
-				}
-			case "SETDATA":
-				reply_msg = map[string]interface{}{
-					"message": "SETDATA_OK",
-				}
 			}
 
 			SendJSONMessageToClient(reply_msg, original_message.Remote)
@@ -342,9 +309,6 @@ func deniedListener(denied_channel chan proposals.Request) {
 func generateAndSendRequest(data []byte, original_message connectionManager.NetworkMessage) {
 	new_req_id := generateUniqueRequestID()
 	proposals.SendWriteRequest(data, new_req_id)
-
-	logger.Info("request id for", new_req_id)
-	logger.Info("original_message type", reflect.TypeOf(original_message))
 	pending_requests[new_req_id] = original_message
 }
 
@@ -369,11 +333,17 @@ func generateUniqueRequestID() int {
 func monitorConnectionToClient(failedSends chan string) {
 	for failedNode := range failedSends {
 		//If it's my client, remove from local_sessions
-		_, exists := local_sessions[failedNode]
+		session_id, exists := local_sessions[failedNode]
 		if exists {
-			delete(local_sessions, failedNode)
-			// TODO: Remove ephemeral nodes
+			request, err := znode.Encode_delete_session(session_id)
+			if err != nil {
+				logger.Error(fmt.Sprint("Error in deleting session:", err))
+			}
 
+			proposals.SendWriteRequest(request, generateUniqueRequestID())
+			logger.Info(fmt.Sprint("Session deleting a timed-out session_id", session_id))
+
+			delete(local_sessions, failedNode)
 		}
 	}
 }
@@ -402,7 +372,6 @@ func monitorConnectionToServer(failedSends chan string) {
 
 // For servers. Send this every 5 seconds or something
 func sendSessionInfo() {
-	// TODO: Get all session_ids connected to this server
 	var session_ids []string
 	for _, session_id := range local_sessions {
 		session_ids = append(session_ids, session_id)
@@ -413,7 +382,7 @@ func sendSessionInfo() {
 	})
 
 	if err != nil {
-		logger.Error("Failed to encode json session info", err)
+		logger.Error(fmt.Sprint("Failed to encode json session info", err))
 	}
 
 	var network_msg connectionManager.NetworkMessage
@@ -421,41 +390,41 @@ func sendSessionInfo() {
 	network_msg.Remote = election.Coordinator.GetCoordinator()
 	network_msg.Message = session_info_json
 
-	logger.Debug("Sending list of connection session_ids", session_ids)
+	logger.Debug(fmt.Sprint("Sending list of connection session_ids", session_ids))
 	err = connectionManager.SendMessage(network_msg)
 	if err != nil {
-		logger.Error("Failed to send message", err)
+		logger.Error(fmt.Sprint("Failed to send message", err))
 	}
 }
 
-// For leader. Run it once when a server gets elected as leader
+// For coordinator. Run it once when a server gets elected as coordinator
 func initializeMap() {
 	session_ids, err := znode.Get_sessions()
 	if err != nil {
-		logger.Error("Failed to get sessions from znode", err)
+		logger.Error(fmt.Sprint("Failed to get sessions from znode", err))
 	}
 
-	map_mu.Lock()
+	sessid_to_ts_mu.Lock()
 	for _, session_id := range session_ids {
 		session_id_to_timestamp[session_id] = time.Now()
 	}
-	map_mu.Unlock()
+	sessid_to_ts_mu.Unlock()
 }
 
-// For leader
+// For coordinator
 func recvSessionInfo(session_info_json []byte) {
 	var session_info SessionInfo
 	err := json.Unmarshal(session_info_json, &session_info)
 
 	if err != nil {
-		logger.Error("Failed to decode json session info", err)
+		logger.Error(fmt.Sprint("Failed to decode json session info", err))
 	}
 
-	map_mu.Lock()
+	sessid_to_ts_mu.Lock()
 	for _, session_id := range session_info.SessionIds {
 		session_id_to_timestamp[session_id] = time.Now()
 	}
-	map_mu.Unlock()
+	sessid_to_ts_mu.Unlock()
 
 }
 
@@ -463,7 +432,7 @@ func recvSessionInfo(session_info_json []byte) {
 func removeExpiredSessions() {
 	curr_time := time.Now()
 
-	map_mu.Lock()
+	sessid_to_ts_mu.Lock()
 	for session_id, timestamp := range session_id_to_timestamp {
 		if curr_time.Sub(timestamp) < reconnect_timeout {
 			continue
@@ -472,13 +441,13 @@ func removeExpiredSessions() {
 		request, err := znode.Encode_delete_session(session_id)
 
 		if err != nil {
-			logger.Error("Error in deleting session:", err)
+			logger.Error(fmt.Sprint("Error in deleting session:", err))
 		}
 
 		proposals.SendWriteRequest(request, generateUniqueRequestID())
 
-		logger.Debug("Deleting a timed-out session_id", session_id)
+		logger.Info(fmt.Sprint("Coordinator deleting a timed-out session_id", session_id))
 		delete(session_id_to_timestamp, session_id)
 	}
-	map_mu.Unlock()
+	sessid_to_ts_mu.Unlock()
 }
