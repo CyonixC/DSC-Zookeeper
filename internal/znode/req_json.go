@@ -10,7 +10,7 @@ import (
 // standard json struct for write requests such as create, update, delete
 type write_request struct {
 	Request string //create, update, delete
-	Znode   ZNode
+	Znodes  []ZNode
 }
 
 //TODO safety to prevent clients from interacting with session znodes directly
@@ -31,7 +31,7 @@ func Encode_create(path string, data []byte, ephemeral bool, sequential bool, se
 	}
 	req := &write_request{
 		Request: "create",
-		Znode:   *znode,
+		Znodes:  []ZNode{*znode},
 	}
 	data, err := json.Marshal(req)
 	if err != nil {
@@ -48,7 +48,7 @@ func Encode_delete(path string, version int) ([]byte, error) {
 	}
 	req := &write_request{
 		Request: "delete",
-		Znode:   *znode,
+		Znodes:  []ZNode{*znode},
 	}
 	data, err := json.Marshal(req)
 	if err != nil {
@@ -66,7 +66,7 @@ func Encode_setdata(path string, data []byte, version int) ([]byte, error) {
 	}
 	req := &write_request{
 		Request: "setdata",
-		Znode:   *znode,
+		Znodes:  []ZNode{*znode},
 	}
 	data, err := json.Marshal(req)
 	if err != nil {

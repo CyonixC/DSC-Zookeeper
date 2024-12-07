@@ -28,46 +28,46 @@ func Check(data []byte) ([]byte, error) {
 
 	case "create":
 		//if seq, modify path to include seq number
-		if req.Znode.Sequential {
-			err = seqname(&req.Znode)
+		if req.Znodes[0].Sequential {
+			err = seqname(&req.Znodes[0])
 			if err != nil {
 				return nil, err
 			}
 		}
 
-		err = check_create(&req.Znode)
+		err = check_create(&req.Znodes[0])
 		if err != nil {
 			return nil, err
 		}
 
 		//update version number in request (and name if seq)
-		updateddata, err := json.Marshal(&write_request{Request: "create", Znode: req.Znode})
+		updateddata, err := json.Marshal(&write_request{Request: "create", Znodes: req.Znodes})
 		if err != nil {
 			return nil, err
 		}
 
 		return updateddata, nil
 	case "setdata":
-		err = check_update(&req.Znode)
+		err = check_update(&req.Znodes[0])
 		if err != nil {
 			return nil, err
 		}
 
 		//update version number in request
-		updateddata, err := json.Marshal(&write_request{Request: "setdata", Znode: req.Znode})
+		updateddata, err := json.Marshal(&write_request{Request: "setdata", Znodes: req.Znodes})
 		if err != nil {
 			return nil, err
 		}
 
 		return updateddata, nil
 	case "delete":
-		err = check_delete(&req.Znode)
+		err = check_delete(&req.Znodes[0])
 		if err != nil {
 			return nil, err
 		}
 		return data, nil
 	case "delete_session":
-		err = check_delete_session(&req.Znode)
+		err = check_delete_session(&req.Znodes[0])
 		if err != nil {
 			return nil, err
 		}
@@ -75,6 +75,21 @@ func Check(data []byte) ([]byte, error) {
 
 	case "sync":
 		return data, nil
+
+	case "watch_trigger":
+		//effectively multiple setdata operations
+		for _, znode := range req.Znodes {
+			err = check_update(&znode)
+			if err != nil {
+				return nil, err
+			}
+		}
+		updateddata, err := json.Marshal(&write_request{Request: "watch_trigger", Znodes: req.Znodes})
+		if err != nil {
+			return nil, err
+		}
+
+		return updateddata, nil
 	default:
 		return nil, &InvalidRequestError{"Invalid request: " + req.Request}
 	}

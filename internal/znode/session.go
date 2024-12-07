@@ -49,7 +49,7 @@ func Encode_delete_session(sessionid string) ([]byte, error) {
 	}
 	req := &write_request{
 		Request: "delete_session",
-		Znode:   *znode,
+		Znodes:  []ZNode{*znode},
 	}
 	data, err := json.Marshal(req)
 	if err != nil {

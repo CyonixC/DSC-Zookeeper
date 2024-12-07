@@ -11,6 +11,7 @@ import (
 // Returns slice of paths that have been modified, or nil if error encountered.
 // Will contain multiple paths only if a session znode is deleted (deleted ephermeral nodes), else will only contain 1 path.
 // Use to check watchers, also used to get file name for create (filepath.Base)
+// Watch_trigger will not return any paths as no need to update watchers.
 func Write(data []byte) ([]string, error) {
 	req := &write_request{}
 	err := json.Unmarshal(data, req)
@@ -23,7 +24,7 @@ func Write(data []byte) ([]string, error) {
 	case "create":
 		//TODO somehow make the writes atomic?
 		// update parent znode children
-		parentpath := filepath.Dir(req.Znode.Path)
+		parentpath := filepath.Dir(req.Znodes[0].Path)
 		// if is base of znodedir, ensure base znode exists in case of this being the first znode created
 		if parentpath == "." || parentpath == sessionDir {
 			if !existsZnode(".") {
@@ -38,7 +39,7 @@ func Write(data []byte) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		parent_znode.Children = append(parent_znode.Children, filepath.Base(req.Znode.Path))
+		parent_znode.Children = append(parent_znode.Children, filepath.Base(req.Znodes[0].Path))
 		// write parent update
 		err = write_op(parent_znode)
 		if err != nil {
@@ -46,8 +47,8 @@ func Write(data []byte) ([]string, error) {
 		}
 
 		// if ephemeral, update session znode
-		if req.Znode.Ephemeral != "" {
-			sessionpath := filepath.Join(sessionDir, req.Znode.Ephemeral)
+		if req.Znodes[0].Ephemeral != "" {
+			sessionpath := filepath.Join(sessionDir, req.Znodes[0].Ephemeral)
 			session_znode, err := GetData(sessionpath)
 			if err != nil {
 				return nil, err
@@ -57,7 +58,7 @@ func Write(data []byte) ([]string, error) {
 			if err != nil {
 				return nil, err
 			}
-			session_data.EphemeralNodes = append(session_data.EphemeralNodes, req.Znode.Path)
+			session_data.EphemeralNodes = append(session_data.EphemeralNodes, req.Znodes[0].Path)
 			session_znode.Data, err = json.Marshal(session_data)
 			if err != nil {
 				return nil, err
@@ -69,15 +70,27 @@ func Write(data []byte) ([]string, error) {
 				return nil, err
 			}
 		}
+		err = write_op(&req.Znodes[0])
+		if err != nil {
+			return nil, err
+		}
 
-		return []string{req.Znode.Path}, write_op(&req.Znode)
+		return []string{req.Znodes[0].Path}, nil
 	case "setdata":
-		return []string{req.Znode.Path}, write_op(&req.Znode)
+		err = write_op(&req.Znodes[0])
+		if err != nil {
+			return nil, err
+		}
+		return []string{req.Znodes[0].Path}, nil
 	case "delete":
-		return []string{req.Znode.Path}, delete_op(&req.Znode)
+		err = delete_op(&req.Znodes[0])
+		if err != nil {
+			return nil, err
+		}
+		return []string{req.Znodes[0].Path}, nil
 	case "delete_session":
 		// delete all ephemeral nodes
-		session_znode, err := GetData(req.Znode.Path)
+		session_znode, err := GetData(req.Znodes[0].Path)
 		if err != nil {
 			return nil, err
 		}
@@ -98,8 +111,21 @@ func Write(data []byte) ([]string, error) {
 			}
 			paths = append(paths, znodepath)
 		}
+		err = delete_op(&req.Znodes[0])
+		if err != nil {
+			return nil, err
+		}
 
-		return paths, delete_op(&req.Znode)
+		return paths, nil
+	case "watch_trigger":
+		// effectively multiple setdata operations
+		for _, znode := range req.Znodes {
+			err = write_op(&znode)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return []string{}, nil
 	default:
 		return nil, &InvalidRequestError{"Invalid request: " + req.Request}
 	}

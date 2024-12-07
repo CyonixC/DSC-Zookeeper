@@ -49,7 +49,7 @@ func Update_watch_cache(sessionid string) error {
 // Encode_watch is a wrapper that calls Encode_setdata to update a session's watchlist
 // set watch to true to add watch flag, false to remove
 // will add session to watch cache if watch is true, but does nothing if false
-func Encode_watch(sessionid string, path string, watch bool) ([]byte, error) {
+func Encode_watch(sessionid string, path string) ([]byte, error) {
 	err := check_watch_init()
 	if err != nil {
 		return nil, err
@@ -65,18 +65,9 @@ func Encode_watch(sessionid string, path string, watch bool) ([]byte, error) {
 	if err != nil {
 		return nil, &CriticalError{"Crictial Error! session znode data is invalid"}
 	}
-	if watch {
-		session_data.Watchlist = append(session_data.Watchlist, path)
-		//add session to watch cache
-		watchcache[path] = append(watchcache[path], sessionid)
-	} else {
-		for i, watchpath := range session_data.Watchlist {
-			if watchpath == path {
-				session_data.Watchlist = append(session_data.Watchlist[:i], session_data.Watchlist[i+1:]...)
-				break
-			}
-		}
-	}
+	session_data.Watchlist = append(session_data.Watchlist, path)
+	//add session to watch cache
+	watchcache[path] = append(watchcache[path], sessionid)
 	session_znode.Data, err = json.Marshal(session_data)
 	if err != nil {
 		return nil, err
@@ -91,13 +82,13 @@ func Encode_watch(sessionid string, path string, watch bool) ([]byte, error) {
 // Returns list of sessions that were watching the paths
 // Clears watchlist for each path
 // TODO figure out better system for storing watch info, avoid so many write requests
-func Check_watch(paths []string) ([][]byte, []string, error) {
+func Check_watch(paths []string) ([]byte, []string, error) {
 	err := check_watch_init()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	var reqs [][]byte
+	var znodes []ZNode
 	var sessions []string
 	for _, path := range paths {
 		var temp_sessions []string
@@ -105,19 +96,48 @@ func Check_watch(paths []string) ([][]byte, []string, error) {
 		if len(watchcache[path]) > 0 {
 			temp_sessions = append(temp_sessions, watchcache[path]...)
 		}
-		//generate requests to update watchlist for each session
+		//generate update watchlist for each znode session
 		for _, sessionid := range temp_sessions {
-			req, err := Encode_watch(sessionid, path, false)
+			sessionpath := filepath.Join(sessionDir, sessionid)
+			session_znode, err := GetData(sessionpath)
 			if err != nil {
 				return nil, nil, err
 			}
-			reqs = append(reqs, req)
+			session_data := &Session{}
+			err = json.Unmarshal(session_znode.Data, session_data)
+			if err != nil {
+				return nil, nil, &CriticalError{"Crictial Error! session znode data is invalid"}
+			}
+			for i, watchpath := range session_data.Watchlist {
+				if watchpath == path {
+					session_data.Watchlist = append(session_data.Watchlist[:i], session_data.Watchlist[i+1:]...)
+					session_znode.Data, err = json.Marshal(session_data)
+					if err != nil {
+						return nil, nil, err
+					}
+					break
+				}
+			}
+			znode := &ZNode{
+				Path:    sessionpath,
+				Data:    session_znode.Data,
+				Version: session_znode.Version,
+			}
+			znodes = append(znodes, *znode)
 		}
 		sessions = append(sessions, temp_sessions...)
 		//clear path from watch cache
 		delete(watchcache, path)
 	}
-	return reqs, sessions, nil
+	req := &write_request{
+		Request: "watch_trigger",
+		Znodes:  znodes,
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	return data, sessions, nil
 }
 
 // Print_watch_cache prints the watch cache for debugging purposes
