@@ -191,14 +191,18 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				}
 				generateAndSendRequest(request, network_msg)
 			case "DELETE":
-				data, err := znode.Encode_delete(obj["path"].(string), obj["version"].((int)))
+				versionstr := obj["version"].(string)
+				version, err := strconv.Atoi(versionstr)
+				data, err := znode.Encode_delete(obj["path"].(string), version)
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
 				logger.Info(fmt.Sprint("Sending delete request"))
 				generateAndSendRequest(data, network_msg)
 			case "SETDATA":
-				data, err := znode.Encode_setdata(obj["path"].(string), obj["data"].([]byte), obj["version"].(int))
+				versionstr := obj["version"].(string)
+				version, err := strconv.Atoi(versionstr)
+				data, err := znode.Encode_setdata(obj["path"].(string), obj["data"].([]byte), version)
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
