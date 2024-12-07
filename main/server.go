@@ -10,6 +10,7 @@ import (
 	"local/zookeeper/internal/logger"
 	"local/zookeeper/internal/znode"
 	"math/rand"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,6 +41,7 @@ func ServerMain() {
 
 	recv, failedSends := connectionManager.Init()
 	go monitorConnectionToClient(failedSends)
+	go monitorConnectionToServer(failedSends)
 	committed, denied, counter := proposals.Init(znode.Check)
 
 	//Start election
@@ -131,7 +133,9 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 			logger.Info(fmt.Sprint("Map Data: ", message))
 
 			// Type assertion to work with the data
+			logger.Info("134")
 			obj := message.(map[string]interface{})
+			logger.Info("136")
 			switch obj["message"] {
 			case "START_SESSION":
 				var new_session_id string
@@ -163,7 +167,6 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					SendJSONMessageToClient(reply_msg, this_client)
 				}
 				//TODO add znode.Update_watch_cache()
-
 			case "END_SESSION":
 				data, err := znode.Encode_delete_session(obj["session_id"].(string))
 				if err != nil {
@@ -180,26 +183,39 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				logger.Info(fmt.Sprint("Sending sync request", obj["session_id"].(string), "to leader"))
 				generateAndSendRequest(data, network_msg)
 			case "CREATE":
-				data, err := znode.Encode_create(obj["path"].(string), obj["data"].([]byte), true, true, obj["session_id"].(string)) // where i get the sequential and ephermeral from
+				strData := obj["data"].(string)
+				data := []byte(strData)
+
+				strEphermeal := obj["ephemeral"].(string)
+				ephemeral, err := strconv.ParseBool(strEphermeal)
+
+				strSequential := obj["sequential"].(string)
+				Sequential, err := strconv.ParseBool(strSequential)
+
+				request, err := znode.Encode_create(obj["path"].(string), data, ephemeral, Sequential, obj["session_id"].(string)) // where i get the sequential and ephermeral from
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
-				logger.Info(fmt.Sprint("Sending create request", obj["data"].([]byte), " to leader"))
-				generateAndSendRequest(data, network_msg)
+				generateAndSendRequest(request, network_msg)
 			case "DELETE":
-				data, err := znode.Encode_delete(obj["path"].(string), obj["version"].((int)))
+				versionstr := obj["version"].(string)
+				version, err := strconv.Atoi(versionstr)
+				data, err := znode.Encode_delete(obj["path"].(string), version)
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
 				logger.Info(fmt.Sprint("Sending delete request"))
 				generateAndSendRequest(data, network_msg)
 			case "SETDATA":
-				data, err := znode.Encode_setdata(obj["path"].(string), obj["data"].([]byte), obj["version"].(int))
+				strData := obj["data"].(string)
+				data := []byte(strData)
+				versionstr := obj["version"].(string)
+				version, err := strconv.Atoi(versionstr)
+				request, err := znode.Encode_setdata(obj["path"].(string), data, version)
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
-				logger.Info(fmt.Sprint("Setting data"))
-				generateAndSendRequest(data, network_msg)
+				generateAndSendRequest(request, network_msg)
 			case "GETCHILDREN":
 				children, err := znode.GetChildren(obj["path"].(string))
 				if err != nil {
@@ -257,6 +273,7 @@ func committedListener(committed_channel chan proposals.Request) {
 			json.Unmarshal([]byte(original_message.Message), &message)
 			var reply_msg interface{}
 			obj := message.(map[string]interface{})
+			logger.Info("the obj is ", obj)
 			switch obj["message"] {
 			case "START_SESSION":
 				//Get session ID from filepath
@@ -273,6 +290,22 @@ func committedListener(committed_channel chan proposals.Request) {
 					"message": "END_SESSION_OK",
 				}
 				delete(local_sessions, original_message.Remote)
+			case "CREATE":
+				reply_msg = map[string]interface{}{
+					"message": "CREATE_OK",
+				}
+			case "DELETE":
+				reply_msg = map[string]interface{}{
+					"message": "DELETE_OK",
+				}
+			case "SYNC":
+				reply_msg = map[string]interface{}{
+					"message": "SYNC_OK",
+				}
+			case "SETDATA":
+				reply_msg = map[string]interface{}{
+					"message": "SETDATA_OK",
+				}
 			}
 
 			SendJSONMessageToClient(reply_msg, original_message.Remote)
@@ -309,6 +342,9 @@ func deniedListener(denied_channel chan proposals.Request) {
 func generateAndSendRequest(data []byte, original_message connectionManager.NetworkMessage) {
 	new_req_id := generateUniqueRequestID()
 	proposals.SendWriteRequest(data, new_req_id)
+
+	logger.Info("request id for", new_req_id)
+	logger.Info("original_message type", reflect.TypeOf(original_message))
 	pending_requests[new_req_id] = original_message
 }
 
@@ -337,6 +373,29 @@ func monitorConnectionToClient(failedSends chan string) {
 		if exists {
 			delete(local_sessions, failedNode)
 			// TODO: Remove ephemeral nodes
+
+		}
+	}
+}
+func monitorConnectionToServer(failedSends chan string) {
+	for failedNode := range failedSends {
+		if failedNode == connectedServer {
+			logger.Error(fmt.Sprint("TCP connection to connected server failed: ", failedNode))
+			connectedServer = ""
+			logger.Info("Attempting to reconnect to a new server")
+			findLiveServer()
+			if election.Coordinator.GetCoordinator() == failedNode {
+				election.InitiateElectionDiscovery()
+			} else {
+				ring_structure := election.ReorderRing(configReader.GetConfig().Servers, configReader.GetName())
+				messageWrapper := election.MessageWrapper{
+					Message_Type: 2,
+					Source:       configReader.GetName(),
+				}
+				updatedRing := election.HandleNewRingMessage(ring_structure, messageWrapper, configReader.GetName())
+				election.Addresses = updatedRing
+				logger.Info(fmt.Sprint("Updated ring structure for node ", configReader.GetName(), updatedRing))
+			}
 		}
 	}
 }

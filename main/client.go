@@ -7,7 +7,6 @@ import (
 	connectionManager "local/zookeeper/internal/ConnectionManager"
 	"local/zookeeper/internal/logger"
 	"os"
-	"strconv"
 	"strings"
 )
 
@@ -61,19 +60,22 @@ func ClientMain() {
 				continue
 			}
 
-			if len(parts) != 3 {
-				logger.Error("Missing path and data for 'create' command")
+			if len(parts) != 5 {
+				logger.Error("Missing path, data, ephemeral, sequential for 'create' command")
 				continue
 			}
 
 			path := strings.TrimSpace(parts[1])
 			data := strings.TrimSpace(parts[2])
-
+			ephemeral := strings.TrimSpace(parts[3])
+			sequential := strings.TrimSpace(parts[4])
 			msg := map[string]interface{}{
 				"message":    "CREATE",
 				"session_id": sessionID,
 				"path":       path,
 				"data":       data,
+				"ephemeral":  ephemeral,
+				"sequential": sequential,
 			}
 			SendJSONMessage(msg, connectedServer)
 		case "delete":
@@ -81,21 +83,13 @@ func ClientMain() {
 				logger.Error("There is no session ongoing to delete")
 				continue
 			}
-			input := strings.TrimSpace(scanner.Text())
-			pathParts := strings.SplitN(input, " ", 2)
-			if len(pathParts) < 2 || strings.TrimSpace(pathParts[1]) == "" {
-				logger.Error("Error: Missing path and version for 'delete' command")
+
+			if len(parts) != 3 {
+				logger.Error("Missing path and version for 'delete' command")
 				continue
 			}
-
-			params := strings.SplitN(pathParts[1], " ", 2)
-			if len(params) < 2 {
-				logger.Error("Error: Missing version for 'delete' command")
-				continue
-			}
-			path := strings.TrimSpace(params[0])
-			version := strings.TrimSpace(params[1])
-
+			path := strings.TrimSpace(parts[1])
+			version := strings.TrimSpace(parts[2])
 			msg := map[string]interface{}{
 				"message":    "DELETE",
 				"session_id": sessionID,
@@ -108,31 +102,18 @@ func ClientMain() {
 				fmt.Println("Error: Session has not started")
 				continue
 			}
-			input := strings.TrimSpace(scanner.Text())
-			pathParts := strings.SplitN(input, " ", 2)
-			if len(pathParts) < 2 || strings.TrimSpace(pathParts[1]) == "" {
-				logger.Error("Error: Missing path, data, and version for 'setdata' command")
+			if len(parts) != 4 {
+				logger.Error("Missing path, data and version for 'setdata' command")
 				continue
 			}
-			params := strings.Fields(pathParts[1])
-			if len(params) < 3 {
-				logger.Error("Error: Missing data or version for 'setdata' command")
-				continue
-			}
-			path := strings.TrimSpace(params[0])
-			data := []byte(strings.TrimSpace(params[1]))
-			versionStr := strings.TrimSpace(params[2])
-
-			version, err := strconv.Atoi(versionStr)
-			if err != nil {
-				logger.Error(fmt.Sprintf("Error: Invalid version number '%s'", versionStr))
-				continue
-			}
+			path := strings.TrimSpace(parts[1])
+			data := strings.TrimSpace(parts[2])
+			versionstr := strings.TrimSpace(parts[3])
 			msg := map[string]interface{}{
 				"message": "SETDATA",
 				"path":    path,
 				"data":    data,
-				"version": version,
+				"version": versionstr,
 			}
 			SendJSONMessage(msg, connectedServer)
 		case "getchildren":
@@ -140,13 +121,11 @@ func ClientMain() {
 				logger.Error(fmt.Sprint("There is no session"))
 				continue
 			}
-			input := strings.TrimSpace(scanner.Text())
-			pathParts := strings.SplitN(input, " ", 2)
-			if len(pathParts) < 2 || strings.TrimSpace(pathParts[1]) == "" {
-				logger.Error("Error: Missing path for 'getchildren' command")
+			if len(parts) != 2 {
+				logger.Error("Missing path 'getchildren' command")
 				continue
 			}
-			path := strings.TrimSpace(pathParts[1])
+			path := strings.TrimSpace(parts[1])
 			msg := map[string]interface{}{
 				"message": "GETCHILDREN",
 				"path":    path,
@@ -157,13 +136,11 @@ func ClientMain() {
 				logger.Error(fmt.Sprint("There is no session"))
 				continue
 			}
-			input := strings.TrimSpace(scanner.Text())
-			pathParts := strings.SplitN(input, " ", 2)
-			if len(pathParts) < 2 || strings.TrimSpace(pathParts[1]) == "" {
-				logger.Error("Error: Missing path for 'exists' command")
+			if len(parts) != 2 {
+				logger.Error("Missing path for 'exists' command")
 				continue
 			}
-			path := strings.TrimSpace(pathParts[1])
+			path := strings.TrimSpace(parts[1])
 			msg := map[string]interface{}{
 				"message": "EXISTS",
 				"path":    path,
@@ -174,13 +151,11 @@ func ClientMain() {
 				logger.Error(fmt.Sprint("There is no session"))
 				continue
 			}
-			input := strings.TrimSpace(scanner.Text())
-			pathParts := strings.SplitN(input, " ", 2)
-			if len(pathParts) < 2 || strings.TrimSpace(pathParts[1]) == "" {
-				logger.Error("Error: Missing path for 'getdata' command")
+			if len(parts) != 2 {
+				logger.Error("Missing path for 'getdata' command")
 				continue
 			}
-			path := strings.TrimSpace(pathParts[1])
+			path := strings.TrimSpace(parts[1])
 			msg := map[string]interface{}{
 				"message": "GETDATA",
 				"path":    path,
@@ -202,7 +177,7 @@ func ClientMain() {
 
 		default:
 			fmt.Printf("Unknown command: %s\n", command)
-			fmt.Println("Available commands: startsession, endsession, publish, subscribe")
+			fmt.Println("Available commands: startsession, endsession, publish, subscribe, create, delete, getchildren, sync,setdata,exists")
 		}
 	}
 }
@@ -256,6 +231,14 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 		case "END_SESSION_OK":
 			sessionID = ""
 			fmt.Println("Session ended successfully.")
+		case "CREATE_OK":
+			fmt.Println("Create Ok")
+		case "DELETE_OK":
+			fmt.Println("Delete Ok")
+		case "SYNC_OK":
+			fmt.Println("Sync Ok")
+		case "SETDATA":
+			fmt.Println("SetData Ok")
 		case "GETCHILDREN":
 			children, err := obj["children"].([]string)
 			if err {
@@ -313,16 +296,4 @@ func findLiveServer() bool {
 	}
 	logger.Error("Unable to connect to any server")
 	return false
-}
-
-// Monitor TCP connection
-func monitorConnectionToServer(failedSends chan string) {
-	for failedNode := range failedSends {
-		if failedNode == connectedServer {
-			logger.Error(fmt.Sprint("TCP connection to connected server failed: ", failedNode))
-			connectedServer = ""
-			logger.Info("Attempting to reconnect to a new server")
-			findLiveServer()
-		}
-	}
 }
