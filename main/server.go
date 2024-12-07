@@ -200,14 +200,15 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				logger.Info(fmt.Sprint("Sending delete request"))
 				generateAndSendRequest(data, network_msg)
 			case "SETDATA":
+				data := []byte(obj["data"].(string))
 				versionstr := obj["version"].(string)
 				version, err := strconv.Atoi(versionstr)
-				data, err := znode.Encode_setdata(obj["path"].(string), obj["data"].([]byte), version)
+				request, err := znode.Encode_setdata(obj["path"].(string), data, version)
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
 				logger.Info(fmt.Sprint("Setting data"))
-				generateAndSendRequest(data, network_msg)
+				generateAndSendRequest(request, network_msg)
 			case "GETCHILDREN":
 				children, err := znode.GetChildren(obj["path"].(string))
 				if err != nil {
@@ -227,13 +228,13 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				}
 				SendJSONMessageToClient(reply_msg, this_client)
 			case "GETDATA":
-				getdata, err := znode.GetData(obj["path"].(string))
+				znode, err := znode.GetData(obj["path"].(string))
 				if err != nil {
 					logger.Error(fmt.Sprint("There is error in getdata"))
 				}
 				reply_msg := map[string]interface{}{
 					"message": "GETDATA",
-					"getdata": getdata,
+					"znode":   znode,
 				}
 				SendJSONMessageToClient(reply_msg, this_client)
 			}
@@ -297,6 +298,7 @@ func committedListener(committed_channel chan proposals.Request) {
 				reply_msg = map[string]interface{}{
 					"message": "SYNC_OK",
 				}
+
 			}
 
 			SendJSONMessageToClient(reply_msg, original_message.Remote)

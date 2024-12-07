@@ -250,8 +250,12 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 			exist = obj["exists"].(bool)
 			logger.Info(fmt.Sprint("It ", exist, "Exists"))
 		case "GETDATA":
-			data = obj["getdata"].(string)
-			logger.Info(fmt.Sprint("The data is ", data))
+			jsonData, err := json.MarshalIndent(obj["znode"], "", "  ")
+			if err != nil {
+				fmt.Println("Error marshalling to JSON:", err)
+				return
+			}
+			logger.Info(fmt.Sprint(string(jsonData)))
 
 		}
 	}
