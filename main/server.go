@@ -180,12 +180,16 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				logger.Info(fmt.Sprint("Sending sync request", obj["session_id"].(string), "to leader"))
 				generateAndSendRequest(data, network_msg)
 			case "CREATE":
-				data, err := znode.Encode_create(obj["path"].(string), obj["data"].([]byte), true, true, obj["session_id"].(string)) // where i get the sequential and ephermeral from
+				data := []byte(obj["data"].(string))
+				ephemeralStr := obj["ephemeral"].(string)
+				ephemeral, err := strconv.ParseBool(ephemeralStr)
+				sequentialStr := obj["sequential"].(string)
+				sequential, err := strconv.ParseBool(sequentialStr)
+				request, err := znode.Encode_create(obj["path"].(string), data, ephemeral, sequential, obj["session_id"].(string)) // where i get the sequential and ephermeral from
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
-				logger.Info(fmt.Sprint("Sending create request", obj["data"].([]byte), " to leader"))
-				generateAndSendRequest(data, network_msg)
+				generateAndSendRequest(request, network_msg)
 			case "DELETE":
 				data, err := znode.Encode_delete(obj["path"].(string), obj["version"].((int)))
 				if err != nil {
@@ -273,6 +277,22 @@ func committedListener(committed_channel chan proposals.Request) {
 					"message": "END_SESSION_OK",
 				}
 				delete(local_sessions, original_message.Remote)
+			case "CREATE":
+				reply_msg = map[string]interface{}{
+					"message": "CREATE_OK",
+				}
+			case "DELETE":
+				reply_msg = map[string]interface{}{
+					"message": "DELETE_OK",
+				}
+			case "SETDATA":
+				reply_msg = map[string]interface{}{
+					"message": "SETDATA_OK",
+				}
+			case "SYNC":
+				reply_msg = map[string]interface{}{
+					"message": "SYNC_OK",
+				}
 			}
 
 			SendJSONMessageToClient(reply_msg, original_message.Remote)
