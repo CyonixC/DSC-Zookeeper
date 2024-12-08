@@ -24,6 +24,7 @@ func proposalWriter(newProposalChan chan Proposal) {
 	}
 }
 
+// Handles sending of messages. This reads from the `sendingQueue` queue and sends the messages in order.
 func messageSender() {
 	for {
 		for sendingQueue.isEmpty() {
@@ -43,6 +44,7 @@ func messageSender() {
 	}
 }
 
+// Handles processing of messages. This reads from the `messageQueue` queue and processes the incoming messages in order.
 func messageProcessor() {
 	for {
 		for messageQueue.isEmpty() {
@@ -56,6 +58,7 @@ func messageProcessor() {
 	}
 }
 
+// Handles the sending of new requests. This reads from the `requestQueue` queue and enqueues them to the sendQueue in order.
 func requestQueuer() {
 	for {
 		for requestQueue.isEmpty() || !requestsEnabled {
@@ -68,6 +71,7 @@ func requestQueuer() {
 	}
 }
 
+// Handles the transfer of the holding queue to the active processing queue.
 func unloadHoldingQueue() {
 	logger.Info(fmt.Sprint("Unloading the holding queue. Queue state: ", queueStateToStr(&holdingRequestsQueue)))
 	for !holdingRequestsQueue.isEmpty() {
@@ -77,6 +81,7 @@ func unloadHoldingQueue() {
 }
 
 // TODO check if I used this anywhere
+// Sync process timeout handler
 func syncTimeout(id int) {
 	time.Sleep(syncResponseTimeout)
 	if id == syncID {

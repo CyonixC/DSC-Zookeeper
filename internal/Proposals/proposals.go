@@ -55,6 +55,7 @@ func Init(check checkFunction) (committed chan Request, denied chan Request, cou
 	return
 }
 
+// Pause the sending and processing of any new requests. This is meant to be called when an election is happening.
 func Pause() {
 	if !requestsEnabled {
 		// Requests alreaady disabled; just return
@@ -71,7 +72,6 @@ func Pause() {
 	sendingQueue.clear()
 
 	// Don't need to reset the sync state. This will be done at the Continue side.
-	// Reset Sync state; don't touch the syncing variable because the NewLeader will check this.
 	// Remember to reset the syncing variable on Continue in case this node is not re-elected!
 }
 
@@ -104,6 +104,7 @@ func SendWriteRequest(content []byte, requestNum int) {
 	sendRequest(req)
 }
 
+// Enqueue a received Zab message to the incoming processing queue
 func EnqueueZabMessage(netMsg cxn.NetworkMessage) {
 	var zm ZabMessage
 	if err := deserialise(netMsg.Message, &zm); err != nil {
@@ -212,6 +213,7 @@ func processProposal(prop Proposal, source string, originalMsg ZabMessage) {
 	}
 }
 
+// Enqueues a message to the outgoing send queue.
 func enqueueMessage(toSend ToSendMessage) {
 	sendingQueue.enqueue(toSend)
 }

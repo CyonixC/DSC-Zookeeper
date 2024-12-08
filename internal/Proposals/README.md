@@ -18,7 +18,7 @@ Use `Init()` to initialise the proposal handler.
 
 ```go
 type checkFunction func([]byte) ([]byte, error)
-func Init(networkChannel chan cxn.NetworkMessage, check checkFunction) (committed chan []byte, denied chan Request)
+func Init(networkChannel chan cxn.NetworkMessage, check checkFunction) (committed chan []byte, denied chan Request, counter *ZXIDCounter)
 ```
 - `networkChannel` - incoming `NetworkMessage`s from the network should arrive on this channel.
 - `check` - this function is used to check potential updates to the data state. It should take in a proposed commit. The return `[]byte` value should be either a commit, which will be used to update the system state, or an error, which will be returned to the sender of the request. The `error` return value is **ONLY USED FOR LOGGING** and will not be returned to the sender!
@@ -26,6 +26,7 @@ func Init(networkChannel chan cxn.NetworkMessage, check checkFunction) (committe
 **Returns**
 - `committed` will send any proposals which are to be committed. These are ones that have already been checked by the coordinator. Any proposal received on this should be committed sequentially and immediately.
 - `denied` will send any proposals which failed the check at the coordinator. The commit contained inside is the one returned by the supplied `check` function on check fail.
+- `counter` holds a reference to the ZXID counter, which can be used by external packages to check the current ZXID. Particularly, this should be passed as an argument to the Election's Init function.
 
 **Example**
 ```go
@@ -38,7 +39,7 @@ func acceptAll(m []byte) ([]byte, error)  { return m, nil }
 // Network channel
 recv_channel, _ := connectionManager.Init()
 
-commitChan, denied := proposals.Init(recv_channel, acceptAll)
+commitChan, denied, counter := proposals.Init(recv_channel, acceptAll)
 ```
 
 ### 2. Send requests
@@ -51,8 +52,31 @@ func SendWriteRequest(content []byte, requestNum int)
 - `requestNum` - the serial number that should be associated with this request. This is to help associate requests with returned errors. For a single session, the IDs of all its requests should be unique to prevent errors from being associated with the wrong request.
 
 ### 3. Checking ZXID
-For election, you might need to get the latest seen ZXID; for this, use the `ZxidCounter` package variable:
+For election, you might need to get the latest seen ZXID; for this, use the `counter` pointer returned by the `Init` function:
 
 ```go
-zxid := proposals.ZxidCounter.GetLatestZXID()
+commitChan, denied, counter := proposals.Init(recv_channel, acceptAll)
+zxid := (*counter).GetLatestZXID()
+```
+
+### 4. Handling Messages
+Any newly received messages should be passed to this package using the `EnqueueZabMessage()` function.
+
+```go
+for network_msg := range recv {
+	proposals.EnqueueZabMessage(network_msg)
+}
+```
+
+### 5. Handling Elections
+During the election, pause Zab processing with the `Pause()` function, and resume Zab processing after the election finishes with the `Continue()` function. Make sure to call `Pause()` immediately on the election start as well.
+
+```go
+if currentlyElecting {
+	// If an election is currently happening, stop ZAB from sending any messages.
+	proposals.Pause()
+} else {
+	// Otherwise, allow it to continue.
+	proposals.Continue()
+}
 ```
