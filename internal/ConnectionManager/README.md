@@ -10,17 +10,6 @@ import (
 )
 ```
 
-### Message format
-The format of the send and received messages is the `NetworkMessage` struct:
-```go
-type NetworkMessage struct {
-	Remote  string
-	Message []byte
-}
-```
-
-`Remote` is the name of the node. With Docker, this is the name of the container. Messages to be sent / received should be serialised / deserialised accordingly.
-
 ### Initialisation
 To initialise, call the `Init()` function.
 
@@ -34,13 +23,9 @@ This returns two channels: the receive channel, and the failure channel.
 
 Both channels should be watched for incoming messages.
 
-For most reliable performance, put a wait before and after the `Init()` call.
-
 Example:
 ```go
-time.Sleep(time.Second)
 recv, failed := connectionManager.Init()
-time.Sleep(time.Second)
 ```
 
 ### Message sending
@@ -68,11 +53,52 @@ To broadcast a message, call the `Broadcast()` function. Note that this broadcas
 Note that unlike `SendMessage`, this takes a regular `[]byte` array, not a `NetworkMessage`.
 ```go
 var msg []byte
-connectionManager.Broadcast(msg)
+func Broadcast(toSend []byte, msgType NetMessageType)
 ```
 
-To broadcast to all known servers, use the `ServerBroadcast()` function. Currently, it just checks if the machine name contains "server" as the prefix.
+To broadcast to all known servers, use the `ServerBroadcast()` function.
 ```go
 var msg []byte
-connectionManager.ServerBroadcast(msg)
+func ServerBroadcast(toSend []byte, msgType NetMessageType)
 ```
+
+To broadcast to a specific set of nodes, use the `CustomBroadcast()` function.
+```go
+var msg []byte
+func CustomBroadcast(dests []string, toSend []byte, msgType NetMessageType)
+```
+### Message format
+The format of the send and received messages is the `NetworkMessage` struct:
+```go
+type NetworkMessage struct {
+	Remote  string
+	Message []byte
+}
+```
+
+`Remote` is the name of the node. With Docker, this is the name of the container. Messages to be sent / received should be serialised / deserialised accordingly.
+
+## Internals
+The ConnectionManager package depends on two `ConnectionMap`s:
+1. Read map
+2. Write map
+
+The Read map contains a mapping from node names to an established TCP connection to that node. This connection will only ever be used to receive messages from the other node.
+
+The Write map contains a mapping from node names to an established TCP connection to that node. This connection will only ever be used to write messages to the other side.
+
+New connections are added to the maps by two corresponding goroutines:
+1. The Read map is maintained by the `readConnectionManager`
+2. The Write map is maintained by the `writeConnectionManager`
+
+Both managers watch a corresponding Go channel which new channels are sent on: the READ channel is newReadChan, and the WRITE channel is newWriteChan.
+
+When the manager returns (due to an interrupt, e.g.), it also closes all connections on its corresponding channel.
+
+### Connection failure
+READ connections can detect if a connection has failed automatically, if the read returns an EOF error. If a READ connection fails, it is closed silently.
+
+WRITE connections are monitored for failure with the `monitorConnection()` function, which constantly attempts to read 1 byte and checks if it is the EOF error. If a WRITE connection fails, it is closed, removed from the Write map, and the name of the node whose connection failed is reported on the external FailedSends channel (one of the channels returned by the `Init()` function).
+
+### Connection establishment
+The establishment of new connections is handled by the `attemptConnection()` function. This function sends TCP connection requests in intervals of `tcpRetryConnectionTimeout`, timing out in `tcpEstablishConnectionTimeout`.

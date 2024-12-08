@@ -1,5 +1,7 @@
 package connectionManager
 
+// Stores connection map structure for READ and WRITE connections.
+
 import (
 	"net"
 	"sync"
