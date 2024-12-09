@@ -170,8 +170,6 @@ children, err = GetChildren(path)
 
 Use `Encode_watch()` to handle any watch flags that come with read requests. \
 It will update the watch cache and return a write request to be sent to the leader to propogate the watch flag. \
-The watch flag if true generates a write request to add watch flag, false removes. \
-By default when handling watch flags should be true, false is meants for use of this func by `Check_watch()` below
 
 ```go
 var sessionid string
