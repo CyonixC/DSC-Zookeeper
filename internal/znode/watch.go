@@ -8,7 +8,6 @@ import (
 )
 
 //TODO implement safety to prevent session znodes from being added to watchlist
-//TODO implement safety to ensure watchcache was initialised before use
 
 // map of znode paths to sessions watching them
 // watch flags are used to signal to clients that a znode has been modified
@@ -18,6 +17,7 @@ var watchinit bool = false
 
 // Creates an empty watch cache
 // Use Update_watch_cache to populate the cache
+// TODO may need lock?
 func Init_watch_cache() {
 	watchcache = make(map[string][]string)
 	watchinit = true
@@ -25,6 +25,7 @@ func Init_watch_cache() {
 
 // Update_watch_cache updates the watch cache with the watchlist of a session
 // Used either to init cache or when picking up an existing session
+// Will also check to ensure versions match local, if any mismatch will return paths of mismatched (to inform client) and special write request to update session znode. (Triggered flags)
 func Update_watch_cache(sessionid string) ([]byte, []string, error) {
 	err := check_watch_init()
 	if err != nil {
@@ -75,8 +76,7 @@ func Update_watch_cache(sessionid string) ([]byte, []string, error) {
 }
 
 // Encode_watch is a wrapper that calls Encode_setdata to update a session's watchlist
-// set watch to true to add watch flag, false to remove
-// will add session to watch cache if watch is true, but does nothing if false
+// will also add session+path to watch cache
 func Encode_watch(sessionid string, path string) ([]byte, error) {
 	err := check_watch_init()
 	if err != nil {
@@ -114,7 +114,7 @@ func Encode_watch(sessionid string, path string) ([]byte, error) {
 }
 
 // Check_watch checks the watch cache for any sessions watching the given paths
-// Returns requests to update watchlist for each session
+// Returns request to update watchlist for each session
 // Returns list of sessions that were watching the paths
 // Clears watchlist for each path
 func Check_watch(paths []string) ([]byte, []string, error) {

@@ -47,6 +47,9 @@ func ServerMain() {
 	election.ElectionInit(counter)
 	election.InitiateElectionDiscovery()
 
+	//init watch cache
+	znode.Init_watch_cache()
+
 	//Listeners
 	go mainListener(recv)
 	go committedListener(committed)
@@ -156,13 +159,28 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 						"session_id": obj["session_id"],
 					}
 					SendJSONMessageToClient(reply_msg, this_client)
+					//Update watch cache
+					request, paths, err := znode.Update_watch_cache(obj["session_id"].(string))
+					if err != nil {
+						logger.Error(fmt.Sprint("Error in updating watch cache:", err))
+					}
+					//check if any flags triggered during reconnect
+					if len(request) > 0 {
+						proposals.SendWriteRequest(request, generateUniqueRequestID())
+						for _, path := range paths {
+							watch_msg := map[string]interface{}{
+								"message": "WATCH_TRIGGER",
+								"path":    path,
+							}
+							SendJSONMessageToClient(watch_msg, this_client)
+						}
+					}
 				} else {
 					reply_msg := map[string]interface{}{
 						"message": "REESTABLISH_SESSION_REJECT",
 					}
 					SendJSONMessageToClient(reply_msg, this_client)
 				}
-				//TODO add znode.Update_watch_cache()
 
 			case "END_SESSION":
 				data, err := znode.Encode_delete_session(obj["session_id"].(string))
@@ -215,6 +233,19 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
 				logger.Info(fmt.Sprint("Getting children"))
+				watchStr := obj["watch"].(string)
+				watch, err := strconv.ParseBool(watchStr)
+				if err != nil {
+					SendInfoMessageToClient(err.Error(), this_client)
+				}
+				if watch {
+					request, err := znode.Encode_watch(local_sessions[this_client], obj["path"].(string))
+					if err != nil {
+						SendInfoMessageToClient(err.Error(), this_client)
+					}
+					logger.Info(fmt.Sprint("Adding watch flag"))
+					generateAndSendRequest(request, network_msg)
+				}
 				reply_msg := map[string]interface{}{
 					"message":  "GETCHILDREN_OK",
 					"children": children,
@@ -222,19 +253,45 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				SendJSONMessageToClient(reply_msg, this_client)
 			case "EXISTS":
 				exists := znode.Exists(obj["path"].(string))
+				watchStr := obj["watch"].(string)
+				watch, err := strconv.ParseBool(watchStr)
+				if err != nil {
+					SendInfoMessageToClient(err.Error(), this_client)
+				}
+				if watch {
+					request, err := znode.Encode_watch(local_sessions[this_client], obj["path"].(string))
+					if err != nil {
+						SendInfoMessageToClient(err.Error(), this_client)
+					}
+					logger.Info(fmt.Sprint("Adding watch flag"))
+					generateAndSendRequest(request, network_msg)
+				}
 				reply_msg := map[string]interface{}{
 					"message": "EXISTS_OK",
 					"exists":  exists,
 				}
 				SendJSONMessageToClient(reply_msg, this_client)
 			case "GETDATA":
-				znode, err := znode.GetData(obj["path"].(string))
+				znode_data, err := znode.GetData(obj["path"].(string))
 				if err != nil {
 					logger.Error(fmt.Sprint("There is error in getdata"))
 				}
+				watchStr := obj["watch"].(string)
+				watch, err := strconv.ParseBool(watchStr)
+				if err != nil {
+					SendInfoMessageToClient(err.Error(), this_client)
+				}
+				if watch {
+					request, err := znode.Encode_watch(local_sessions[this_client], obj["path"].(string))
+					if err != nil {
+						SendInfoMessageToClient(err.Error(), this_client)
+					}
+					logger.Info(fmt.Sprint("Adding watch flag"))
+					generateAndSendRequest(request, network_msg)
+				}
 				reply_msg := map[string]interface{}{
 					"message": "GETDATA_OK",
-					"znode":   znode,
+					"znode":   znode_data,
 				}
 				SendJSONMessageToClient(reply_msg, this_client)
 			}
@@ -257,6 +314,28 @@ func committedListener(committed_channel chan proposals.Request) {
 		if err != nil {
 			logger.Error(fmt.Sprint("Error when attempting to commit: ", err.Error()))
 			return
+		}
+		//check for triggered watch flags
+		data, sessions, err := znode.Check_watch(modified_paths)
+		if len(data) > 0 {
+			// for each session with triggered watch flags
+			for _, session := range sessions {
+				// get client for each session id
+				for client, session_id := range local_sessions {
+					if session_id == session {
+						// for each (modified) path that triggered a watch flag, send a message to the client
+						for _, path := range modified_paths {
+							watch_msg := map[string]interface{}{
+								"message": "WATCH_TRIGGER",
+								"path":    path,
+							}
+							SendJSONMessageToClient(watch_msg, client)
+						}
+						break
+					}
+				}
+			}
+			proposals.SendWriteRequest(data, generateUniqueRequestID())
 		}
 
 		//If it's my client, remove from pending_requests and reply to client

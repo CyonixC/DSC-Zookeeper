@@ -176,10 +176,9 @@ By default when handling watch flags should be true, false is meants for use of 
 ```go
 var sessionid string
 var path string
-var watch bool
 var request []byte
 var err error
-request, err = Encode_watch(sessionid, path, watch)
+request, err = Encode_watch(sessionid, path)
 ```
 
 Use `Check_watch()` after commiting a write request with `Write()`. \

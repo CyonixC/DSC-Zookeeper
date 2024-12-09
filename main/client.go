@@ -104,7 +104,7 @@ func ClientMain() {
 				continue
 			}
 			if len(parts) != 3 {
-				logger.Error("Missing path and data'setdata' command")
+				logger.Error("Missing path and data for 'setdata' command")
 				continue
 			}
 			path := strings.TrimSpace(parts[1])
@@ -121,14 +121,16 @@ func ClientMain() {
 				logger.Error(fmt.Sprint("There is no session"))
 				continue
 			}
-			if len(parts) != 2 {
-				logger.Error("Missing path 'getchildren' command")
+			if len(parts) != 3 {
+				logger.Error("Missing path or watch flag for 'getchildren' command")
 				continue
 			}
 			path := strings.TrimSpace(parts[1])
+			watch := strings.TrimSpace(parts[2])
 			msg := map[string]interface{}{
 				"message": "GETCHILDREN",
 				"path":    path,
+				"watch":   watch,
 			}
 			SendJSONMessage(msg, connectedServer)
 		case "exists":
@@ -137,13 +139,15 @@ func ClientMain() {
 				continue
 			}
 			if len(parts) != 2 {
-				logger.Error("Missing path for 'exists' command")
+				logger.Error("Missing path or watch flag for 'exists' command")
 				continue
 			}
 			path := strings.TrimSpace(parts[1])
+			watch := strings.TrimSpace(parts[2])
 			msg := map[string]interface{}{
 				"message": "EXISTS",
 				"path":    path,
+				"watch":   watch,
 			}
 			SendJSONMessage(msg, connectedServer)
 		case "getdata":
@@ -152,13 +156,15 @@ func ClientMain() {
 				continue
 			}
 			if len(parts) != 2 {
-				logger.Error("Missing path for 'getdata' command")
+				logger.Error("Missing path or watch flag for 'getdata' command")
 				continue
 			}
 			path := strings.TrimSpace(parts[1])
+			watch := strings.TrimSpace(parts[2])
 			msg := map[string]interface{}{
 				"message": "GETDATA",
 				"path":    path,
+				"watch":   watch,
 			}
 			SendJSONMessage(msg, connectedServer)
 		case "publish": // this is the read, dont write data to znode, znode tells you who to write just for coordiantion
@@ -267,7 +273,9 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 				return
 			}
 			logger.Info(fmt.Sprint(string(jsonData)))
-
+		case "WATCH_TRIGGER":
+			path := obj["path"].(string)
+			fmt.Println("Watch flag triggered for path: ", path)
 		}
 	}
 }
