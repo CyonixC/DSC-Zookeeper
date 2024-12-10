@@ -27,7 +27,7 @@ type SessionInfo struct {
 	SessionIds []string `json:"session_ids"`
 }
 
-var session_id_to_timestamp = make(map[string]time.Time)
+var session_id_to_timestamp map[string]time.Time
 var sessid_to_ts_mu sync.Mutex
 
 // Time we give the client to reconnect to another server if its current server crashed.
@@ -35,7 +35,7 @@ const reconnect_timeout time.Duration = 10 * time.Second
 
 // Main entry for server
 func ServerMain() {
-	pending_requests = make((map[int]connectionManager.NetworkMessage))
+	request_id_to_pending_request = make((map[int]PendingRequest))
 	local_sessions = make((map[string]string))
 
 	recv, failedSends := connectionManager.Init()
@@ -84,8 +84,8 @@ func SendJSONMessageToClient(jsonData interface{}, client string) error {
 		return err
 	} else {
 		logger.Info("Message send success.")
+		return nil
 	}
-	return nil
 }
 
 // Helper function to send info/error messages back to client (i.e. just need to print in client terminal)
@@ -116,10 +116,12 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 			electionstatus := election.HandleMessage(messageWrapper)
 			if !electionstatus {
 				logger.Info("Election Completed")
+				session_id_to_timestamp = nil // Reset the map
+
 				if election.Coordinator.GetCoordinator() == configReader.GetName() {
 					znode.Init_znode_cache()
 					proposals.Continue()
-					initializeMap()
+					initializeSessionIdMap()
 				}
 			}
 
@@ -148,7 +150,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				data, _ := znode.Encode_create_session(new_session_id, 2)
 
 				logger.Info(fmt.Sprint("Sending session write request: ", new_session_id, " to leader"))
-				generateAndSendRequest(data, network_msg) //Generate a request ID, send the request, and add it to pending_requests
+				generateAndSendRequest(data, network_msg)
 
 			case "REESTABLISH_SESSION":
 				// Check if session ID exist, return success if it is, else return failure with new ID.
@@ -507,7 +509,8 @@ func sendSessionInfo() {
 }
 
 // For coordinator. Run it once when a server gets elected as coordinator
-func initializeMap() {
+func initializeSessionIdMap() {
+	session_id_to_timestamp = make(map[string]time.Time)
 	session_ids, err := znode.Get_sessions()
 	if err != nil {
 		logger.Error(fmt.Sprint("Failed to get sessions from znode", err))
@@ -539,6 +542,10 @@ func recvSessionInfo(session_info_json []byte) {
 
 // For leader. Run this every 5 seconds or something
 func removeExpiredSessions() {
+	if session_id_to_timestamp == nil {
+		return
+	}
+
 	curr_time := time.Now()
 
 	sessid_to_ts_mu.Lock()
