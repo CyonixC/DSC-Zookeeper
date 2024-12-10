@@ -35,7 +35,7 @@ const reconnect_timeout time.Duration = 10 * time.Second
 
 // Main entry for server
 func ServerMain() {
-	request_id_to_pending_request = make((map[int]PendingRequest))
+	pending_requests = make((map[int]connectionManager.NetworkMessage))
 	local_sessions = make((map[string]string))
 
 	recv, failedSends := connectionManager.Init()
