@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	configReader "local/zookeeper/internal/ConfigReader"
 	connectionManager "local/zookeeper/internal/ConnectionManager"
 	proposals "local/zookeeper/internal/Proposals"
 	"local/zookeeper/internal/election"
@@ -63,9 +62,7 @@ func main() {
 	// Initialise with the random check function
 	success, rejected, counter := proposals.Init(randomPassFail)
 	election.ElectionInit(counter)
-	if configReader.GetName() == "server1" {
-		election.InitiateElectionDiscovery()
-	}
+	election.InitiateElectionDiscovery()
 
 	// Failed node processing loop
 	go func() {
