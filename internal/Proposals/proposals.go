@@ -29,6 +29,7 @@ var syncID int                                                // jank ID system 
 var newProposalChan = make(chan Proposal, 10)
 var toCommitChan = make(chan Request, 10)
 var failedRequestChan = make(chan Request)
+var SyncFinish = make(chan bool, 10)
 
 type checkFunction func([]byte) ([]byte, error)
 
@@ -239,6 +240,7 @@ func processStateChangeProposal(prop Proposal, source string, originalMsg ZabMes
 			syncTrack.deactivate()
 			ack := makeACK(syncMsg)
 			queueSend(ack, false, source)
+			SyncFinish <- true
 		}
 	} else {
 		// Otherwise, normal operation
@@ -278,6 +280,7 @@ func processNewLeaderProposal(prop Proposal, source string, originalMsg ZabMessa
 		logger.Debug("Received NewLeader but already up to date, ACKing the NewLeader")
 		ack := makeACK(originalMsg)
 		queueSend(ack, false, source)
+		SyncFinish <- true
 		return
 	}
 
