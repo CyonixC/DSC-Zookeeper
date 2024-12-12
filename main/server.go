@@ -99,10 +99,7 @@ func SendInfoMessageToClient(info string, client string) {
 
 // Listen for messages
 func mainListener(recv_channel chan connectionManager.NetworkMessage) {
-
-	// election.HandleMessage(messageWrapper)
 	for network_msg := range recv_channel {
-
 		this_client := network_msg.Remote
 		logger.Info(fmt.Sprint("Receive message from ", this_client))
 
@@ -135,7 +132,6 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 			}
 			logger.Info(fmt.Sprint("Map Data: ", message))
 
-			// Type assertion to work with the data
 			obj := message.(map[string]interface{})
 			switch obj["message"] {
 			case "START_SESSION":
@@ -192,6 +188,8 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 
 				logger.Info(fmt.Sprint("Sending session end request: ", obj["session_id"].(string), " to leader"))
 				generateAndSendRequest(data, network_msg)
+
+			/// EXTRA COMMANDS: for testing & demonstration of zookeeper
 			case "SYNC":
 				data, err := znode.Encode_sync()
 				if err != nil {
@@ -300,7 +298,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 
 			//Handle ZAB messages from other server
 		} else if network_msg.Type == connectionManager.ZAB {
-			//Handle messages from other server
+			//Handle messages from other server through proposals package
 			proposals.ProcessZabMessage(network_msg)
 		} else if network_msg.Type == connectionManager.HEARTBEAT {
 			//Handle heartbeats
@@ -309,6 +307,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 	}
 }
 
+//Listener for proposal commit messages
 func committedListener(committed_channel chan proposals.Request) {
 	for request := range committed_channel {
 		logger.Info(fmt.Sprint("Receive commit ", request.ReqNumber, ": Type ", request.ReqType))
@@ -317,8 +316,9 @@ func committedListener(committed_channel chan proposals.Request) {
 			logger.Error(fmt.Sprint("Error when attempting to commit: ", err.Error()))
 			return
 		}
-		//check for triggered watch flags
-		data, sessions, err := znode.Check_watch(modified_paths)
+
+		//Check for triggered watch flags
+		data, sessions, _ := znode.Check_watch(modified_paths)
 		if len(sessions) > 0 {
 			// for each session with triggered watch flags
 			for _, session := range sessions {
@@ -392,6 +392,7 @@ func committedListener(committed_channel chan proposals.Request) {
 	}
 }
 
+//Listener for proposal denied messages
 func deniedListener(denied_channel chan proposals.Request) {
 	for request := range denied_channel {
 		logger.Info(fmt.Sprint("Receive denied ", request.ReqNumber, ": Type ", request.ReqType))
@@ -458,6 +459,8 @@ func monitorConnectionToClient(failedSends chan string) {
 		}
 	}
 }
+
+// If connection to another server fails, trigger an election
 func monitorConnectionToServer(failedSends chan string) {
 	for failedNode := range failedSends {
 		if failedNode == connectedServer {
@@ -481,7 +484,7 @@ func monitorConnectionToServer(failedSends chan string) {
 	}
 }
 
-// For servers. Send this every 5 seconds or something
+// Send a heartbeat every 5 seconds to tell the leader all the clients connected to this server
 func sendSessionInfo() {
 	var session_ids []string
 	for _, session_id := range local_sessions {
@@ -508,7 +511,7 @@ func sendSessionInfo() {
 	}
 }
 
-// For coordinator. Run it once when a server gets elected as coordinator
+// For coordinator. Creates a map of session:timers to track timeouts of all the sessions
 func initializeSessionIdMap() {
 	session_id_to_timestamp = make(map[string]time.Time)
 	session_ids, err := znode.Get_sessions()
@@ -523,7 +526,7 @@ func initializeSessionIdMap() {
 	sessid_to_ts_mu.Unlock()
 }
 
-// For coordinator
+// For coordinator. Reset the session timeout when received a heartbeat from server.
 func recvSessionInfo(session_info_json []byte) {
 	var session_info SessionInfo
 	err := json.Unmarshal(session_info_json, &session_info)
@@ -537,10 +540,9 @@ func recvSessionInfo(session_info_json []byte) {
 		session_id_to_timestamp[session_id] = time.Now()
 	}
 	sessid_to_ts_mu.Unlock()
-
 }
 
-// For leader. Run this every 5 seconds or something
+// For coordinator. Remove expired sessions when they timeout.
 func removeExpiredSessions() {
 	if session_id_to_timestamp == nil {
 		return

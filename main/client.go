@@ -13,7 +13,6 @@ import (
 var connectedServer string
 var sessionID string
 var exist bool
-var data string
 var versions map[string]int
 
 // Main entry for client
@@ -32,10 +31,12 @@ func ClientMain() {
 		command := strings.TrimSpace(scanner.Text())
 		parts := strings.Split(command, " ")
 		switch parts[0] {
+		//Connect to server and get a session ID
 		case "startsession":
 			//Look for available servers and connect to one
 			findLiveServer()
 
+		//Disconnect from server
 		case "endsession":
 			if connectedServer == "" {
 				fmt.Println("Error: Session has not started")
@@ -46,6 +47,48 @@ func ClientMain() {
 				"session_id": sessionID,
 			}
 			SendJSONMessage(msg, connectedServer)
+			
+		//Publish some data to a topic. Creates a topic if it does not exist.
+		case "publish": 
+			if connectedServer == "" {
+				fmt.Println("Error: Session has not started")
+				continue
+			}
+			if len(parts) != 3{
+				fmt.Println("Usage: publish <topic> <data>")
+			}
+
+			path := strings.TrimSpace(parts[1])
+			data := strings.TrimSpace(parts[2])
+
+			msg := map[string]interface{}{
+				"message":    "PUBLISH",
+				"session_id": sessionID,
+				"path":       path,
+				"data":       data,
+			}
+			SendJSONMessage(msg, connectedServer)
+
+		//Subscribe (watch) a topic
+		case "subscribe":
+			if connectedServer == "" {
+				fmt.Println("Error: Session has not started")
+				continue
+			}
+			if len(parts) != 2{
+				fmt.Println("Usage: publish <topic>")
+			}
+
+			path := strings.TrimSpace(parts[1])
+
+			msg := map[string]interface{}{
+				"message":    "SUBSCRIBE",
+				"session_id": sessionID,
+				"path":       path,
+			}
+			SendJSONMessage(msg, connectedServer)
+
+		/// EXTRA COMMANDS: for testing & demonstration of zookeeper
 		case "sync":
 			if connectedServer == "" {
 				logger.Error(fmt.Sprint("There is no session ongoing to sync"))
@@ -56,6 +99,7 @@ func ClientMain() {
 				"session_id": sessionID,
 			}
 			SendJSONMessage(msg, connectedServer)
+			
 		case "create":
 			if connectedServer == "" {
 				logger.Error("There is no session ongoing to create")
@@ -80,24 +124,7 @@ func ClientMain() {
 				"sequential": sequential,
 			}
 			SendJSONMessage(msg, connectedServer)
-		case "delete":
-			if connectedServer == "" {
-				logger.Error("There is no session ongoing to delete")
-				continue
-			}
 
-			if len(parts) != 2 {
-				logger.Error("Missing path for 'delete' command")
-				continue
-			}
-			path := strings.TrimSpace(parts[1])
-			msg := map[string]interface{}{
-				"message":    "DELETE",
-				"session_id": sessionID,
-				"path":       path,
-				"version":    versions[path],
-			}
-			SendJSONMessage(msg, connectedServer)
 		case "setdata":
 			if connectedServer == "" {
 				fmt.Println("Error: Session has not started")
@@ -116,6 +143,7 @@ func ClientMain() {
 				"version": versions[path],
 			}
 			SendJSONMessage(msg, connectedServer)
+		
 		case "getchildren":
 			if connectedServer == "" {
 				logger.Error(fmt.Sprint("There is no session"))
@@ -133,6 +161,7 @@ func ClientMain() {
 				"watch":   watch,
 			}
 			SendJSONMessage(msg, connectedServer)
+		
 		case "exists":
 			if connectedServer == "" {
 				logger.Error(fmt.Sprint("There is no session"))
@@ -150,6 +179,7 @@ func ClientMain() {
 				"watch":   watch,
 			}
 			SendJSONMessage(msg, connectedServer)
+		
 		case "getdata":
 			if connectedServer == "" {
 				logger.Error(fmt.Sprint("There is no session"))
@@ -167,23 +197,29 @@ func ClientMain() {
 				"watch":   watch,
 			}
 			SendJSONMessage(msg, connectedServer)
-		case "publish": // this is the read, dont write data to znode, znode tells you who to write just for coordiantion
+
+		case "delete":
 			if connectedServer == "" {
-				fmt.Println("Error: Session has not started")
+				logger.Error("There is no session ongoing to delete")
 				continue
 			}
 
-		case "subscribe": //write, dont write data znode, write configuration, config as in like who u subscirbe to which topic
-			if connectedServer == "" {
-				fmt.Println("Error: Session has not started")
+			if len(parts) != 2 {
+				logger.Error("Missing path for 'delete' command")
 				continue
 			}
-			// add yourself to the topic znode though, from the name of the subszcribe
-			// subscribe function,
+			path := strings.TrimSpace(parts[1])
+			msg := map[string]interface{}{
+				"message":    "DELETE",
+				"session_id": sessionID,
+				"path":       path,
+				"version":    versions[path],
+			}
+			SendJSONMessage(msg, connectedServer)
 
 		default:
 			fmt.Printf("Unknown command: %s\n", command)
-			fmt.Println("Available commands: startsession, endsession, publish, subscribe, create, delete, getchildren, sync,setdata,exists")
+			fmt.Println("Available commands: startsession, endsession, publish, subscribe")
 		}
 	}
 }
@@ -220,7 +256,6 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 		}
 		logger.Info(fmt.Sprint("Map Data: ", message))
 
-		// Type assertion to work with the data
 		obj := message.(map[string]interface{})
 		switch obj["message"] {
 		case "INFO":
@@ -237,12 +272,13 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 		case "END_SESSION_OK":
 			sessionID = ""
 			fmt.Println("Session ended successfully.")
+			
+		/// EXTRA COMMANDS: for testing & demonstration of zookeeper
 		case "CREATE_OK":
 			path := obj["path"].(string)
 			if _, exists := versions[path]; !exists {
 				versions[path] = 1
 			}
-
 			fmt.Println("Create Ok")
 		case "DELETE_OK":
 			path := obj["path"].(string)
