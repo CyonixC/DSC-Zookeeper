@@ -200,9 +200,9 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 			case "CREATE":
 				data := []byte(obj["data"].(string))
 				ephemeralStr := obj["ephemeral"].(string)
-				ephemeral, err := strconv.ParseBool(ephemeralStr)
+				ephemeral, _ := strconv.ParseBool(ephemeralStr)
 				sequentialStr := obj["sequential"].(string)
-				sequential, err := strconv.ParseBool(sequentialStr)
+				sequential, _ := strconv.ParseBool(sequentialStr)
 				request, err := znode.Encode_create(obj["path"].(string), data, ephemeral, sequential, obj["session_id"].(string)) // where i get the sequential and ephermeral from
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
