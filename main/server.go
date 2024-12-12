@@ -35,7 +35,7 @@ const reconnect_timeout time.Duration = 10 * time.Second
 
 // Main entry for server
 func ServerMain() {
-	request_id_to_pending_request = make((map[int]PendingRequest))
+	pending_requests = make((map[int]connectionManager.NetworkMessage))
 	local_sessions = make((map[string]string))
 
 	recv, failedSends := connectionManager.Init()
@@ -319,7 +319,7 @@ func committedListener(committed_channel chan proposals.Request) {
 		}
 		//check for triggered watch flags
 		data, sessions, err := znode.Check_watch(modified_paths)
-		if len(data) > 0 {
+		if len(sessions) > 0 {
 			// for each session with triggered watch flags
 			for _, session := range sessions {
 				// get client for each session id
