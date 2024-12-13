@@ -345,6 +345,20 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 		case "EXISTS_OK":
 			exist = obj["exists"].(bool)
 			logger.Info(fmt.Sprint("Exists = ", exist))
+			// Assuming app use case of using exist to set watch flag
+			// if (msg) znode exists, need to get and set watch flag on subsequent (non-exist msg) znode
+			// basically start a new get_subscription process similar to watch_trigger
+			if exist {
+				topLevelPath := strings.Split(obj["path"].(string), "/")[0]
+				nextMsgNum := topicMsgMap[topLevelPath]
+				msg := map[string]interface{}{
+					"message":    "GET_SUBSCRIPTION",
+					"topic":      topLevelPath,
+					"nextMsg":    nextMsgNum,
+					"session_id": sessionID,
+				}
+				SendJSONMessage(msg, connectedServer)
+			}
 		case "GETDATA_OK":
 			jsonData, err := json.MarshalIndent(obj["znode"], "", "  ")
 			if err != nil {

@@ -321,14 +321,15 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				}
 				SendJSONMessageToClient(reply_msg, this_client)
 			case "EXISTS":
-				exists := znode.Exists(obj["path"].(string))
+				path := obj["path"].(string)
+				exists := znode.Exists(path)
 				watchStr := obj["watch"].(string)
 				watch, err := strconv.ParseBool(watchStr)
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
 				if watch {
-					request, err := znode.Encode_watch(local_sessions[this_client], obj["path"].(string), true)
+					request, err := znode.Encode_watch(local_sessions[this_client], path, true)
 					if err != nil {
 						SendInfoMessageToClient(err.Error(), this_client)
 					}
@@ -338,6 +339,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				reply_msg := map[string]interface{}{
 					"message": "EXISTS_OK",
 					"exists":  exists,
+					"path":    path,
 				}
 				SendJSONMessageToClient(reply_msg, this_client)
 			case "GETDATA":
