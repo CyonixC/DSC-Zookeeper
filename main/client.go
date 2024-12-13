@@ -12,6 +12,8 @@ import (
 
 var connectedServer string
 var sessionID string
+var topicMsgMap map[string]int //Map of subscribed topic: next message ID to be read
+
 var exist bool
 var versions map[string]int
 
@@ -19,6 +21,8 @@ var versions map[string]int
 func ClientMain() {
 	recv, failedSends := connectionManager.Init()
 	versions = make(map[string]int)
+	topicMsgMap = make(map[string]int)
+
 	go monitorConnectionToServer(failedSends)
 
 	//Main Listener
@@ -280,9 +284,28 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 		case "PUBLISH_OK":
 			fmt.Println("Message published successfully.")
 		case "SUBSCRIBE_OK":
-			fmt.Println("Successfully subscribed to topic.")
+			fmt.Println("Successfully subscribed to topic:", obj["topic"].(string))
+			topicMsgMap[obj["topic"].(string)] = int(obj["nextMsg"].(float64))
 		case "WATCH_TRIGGER":
-			fmt.Println("Subscribed topic has been modified.")
+			fmt.Println("Watched path has been modified:", obj["path"].(string))
+
+			//If the path is a subscribed topic, request for all the newest messages
+			topLevelPath := strings.Split(obj["path"].(string), "/")[0]
+			nextMsgNum, topicExists := topicMsgMap[topLevelPath]
+			if topicExists {
+				msg := map[string]interface{}{
+					"message":    "GET_SUBSCRIPTION",
+					"topic": 	  topLevelPath,
+					"nextMsg": 	  nextMsgNum,
+					"session_id": sessionID,
+				}
+				SendJSONMessage(msg, connectedServer)
+			}
+		case "SUBSCRIBED_MESSAGE":
+			fmt.Println("Received message from topic", obj["topic"].(string), ":", obj["data"].(string))
+		case "GET_SUBSCRIPTION_OK":
+			//Update the next message to watch for
+			topicMsgMap[obj["topic"].(string)] = int(obj["nextMsg"].(float64))
 
 		/// EXTRA COMMANDS: for testing & demonstration of zookeeper
 		case "SYNC_OK":		

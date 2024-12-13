@@ -229,6 +229,32 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					generateAndSendRequest(data, network_msg)
 				}
 
+			case "GET_SUBSCRIPTION":
+				//Send all unseen messages to the client
+				//Then add a new watch flag for the next message that doesn't exist yet
+
+				topic := obj["topic"].(string)
+				nextmsgnum := int(obj["nextMsg"].(float64))
+				for {
+					path := topic + "/msg_" + strconv.Itoa(nextmsgnum)
+					if znode.Exists(path) {
+						z, _ := znode.GetData(path)
+						data := string(z.Data)
+						msg := map[string]interface{}{
+							"message": "SUBSCRIBED_MESSAGE",
+							"topic": topic,
+							"data": data,
+						}
+						SendJSONMessageToClient(msg, this_client)
+						nextmsgnum++
+					} else {
+						logger.Debug("Creating watch flag on " + path)
+						data, _ := znode.Encode_watch(obj["session_id"].(string), path)
+						generateAndSendRequest(data, network_msg)
+						break
+					}
+				}
+
 			/// EXTRA COMMANDS: for testing & demonstration of zookeeper
 			case "SYNC":
 				data, err := znode.Encode_sync()
@@ -358,7 +384,9 @@ func committedListener(committed_channel chan proposals.Request) {
 			return
 		}
 
-		//Check for triggered watch flags
+		//Check for triggered watch flags.
+		//If any connected client is watching, inform the client of the change
+		//Then send a write request to remove the watch flag
 		data, sessions, _ := znode.Check_watch(modified_paths)
 		if len(sessions) > 0 {
 			// for each session with triggered watch flags
@@ -444,9 +472,22 @@ func committedListener(committed_channel chan proposals.Request) {
 						"message": "CREATE_TOPIC_OK",
 					}
 				} else {
+					children, _ := znode.GetChildren(obj["topic"].(string))
+					nextmsgnum := findMaxMessageNumber(children) + 1
 					reply_msg = map[string]interface{}{
 						"message": "SUBSCRIBE_OK",
+						"topic": obj["topic"].(string),
+						"nextMsg": nextmsgnum,
 					}
+				}
+
+			case "GET_SUBSCRIPTION":
+				children, _ := znode.GetChildren(obj["topic"].(string))
+				nextmsgnum := findMaxMessageNumber(children) + 1
+				reply_msg = map[string]interface{}{
+					"message": "GET_SUBSCRIPTION_OK",
+					"topic": obj["topic"].(string),
+					"nextMsg": nextmsgnum,
 				}
 
 			/// EXTRA COMMANDS: for testing & demonstration of zookeeper
@@ -470,6 +511,8 @@ func committedListener(committed_channel chan proposals.Request) {
 					"message": "SYNC_OK",
 					"path":    obj["path"],
 				}
+			default:
+				continue			
 			}
 
 			SendJSONMessageToClient(reply_msg, original_message.Remote)
