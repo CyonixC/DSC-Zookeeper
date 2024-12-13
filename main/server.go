@@ -219,7 +219,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				} else { //Else, watch the next msg in that topic (highest message number +1, currently nonexistant)
 					children, _ := znode.GetChildren(obj["topic"].(string))
 					nextmsgnum := findMaxMessageNumber(children) + 1
-					path := obj["topic"].(string) + "/msg" + strconv.Itoa(nextmsgnum)
+					path := obj["topic"].(string) + "/msg_" + strconv.Itoa(nextmsgnum)
 					logger.Debug("Creating watch flag on " + path)
 					data, _ := znode.Encode_watch(obj["session_id"].(string), path)
 
@@ -431,7 +431,7 @@ func committedListener(committed_channel chan proposals.Request) {
 				if obj["newtopic"].(bool) { //Topic was just created, watch flag not set yet
 					children, _ := znode.GetChildren(obj["topic"].(string))
 					nextmsgnum := findMaxMessageNumber(children) + 1
-					path := obj["topic"].(string) + "/msg" + strconv.Itoa(nextmsgnum)
+					path := obj["topic"].(string) + "/msg_" + strconv.Itoa(nextmsgnum)
 					logger.Debug("Creating watch flag on " + path)
 					data, _ := znode.Encode_watch(obj["session_id"].(string), path)
 
@@ -664,7 +664,7 @@ func findMaxMessageNumber(messages []string) int {
 	maxNum := 0
 	for _, msg := range messages {
 		// Strip the "msg" prefix and convert to an integer
-		numStr := strings.TrimPrefix(msg, "msg")
+		numStr := strings.TrimPrefix(msg, "msg_")
 		num, err := strconv.Atoi(numStr)
 		if err != nil {
 			continue // Skip if there's an error in conversion

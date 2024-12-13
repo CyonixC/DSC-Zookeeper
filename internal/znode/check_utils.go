@@ -4,6 +4,8 @@ package znode
 
 import (
 	"encoding/json"
+	"fmt"
+	"local/zookeeper/internal/logger"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -185,6 +187,8 @@ func check_update(znode *ZNode) error {
 	if _, ok := znodecache[znode.Path]; !ok {
 		return &ExistsError{"znode already exists"}
 	}
+
+	logger.Debug(fmt.Sprint("Path: ", znode.Path, " znode.Version: ", znode.Version, " znodecache: ", znodecache[znode.Path].Version))
 
 	//check version match if not -1
 	if znode.Version != -1 {

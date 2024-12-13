@@ -4,6 +4,8 @@ package znode
 
 import (
 	"encoding/json"
+	"fmt"
+	"local/zookeeper/internal/logger"
 	"path/filepath"
 )
 
@@ -95,13 +97,16 @@ func Encode_watch(sessionid string, path string) ([]byte, error) {
 	}
 	//update watchlist
 	session_data.Watchlist = append(session_data.Watchlist, path)
+	logger.Debug(fmt.Sprint("Watchlist:", session_data.Watchlist))
 	//get latest version of znode to watch
 	znode, err := GetData(path)
 	if err != nil {
-		return nil, err
+		//It's fine if znode doesn't exist, attempting to watch nonexistant znode
+		session_data.Versionlist = append(session_data.Versionlist, 1)
+	} else {
+		//update versionlist if it exists
+		session_data.Versionlist = append(session_data.Versionlist, znode.Version)
 	}
-	//update versionlist
-	session_data.Versionlist = append(session_data.Versionlist, znode.Version)
 	//add session to watch cache
 	watchcache[path] = append(watchcache[path], sessionid)
 	session_znode.Data, err = json.Marshal(session_data)
@@ -143,6 +148,7 @@ func Check_watch(paths []string) ([]byte, []string, error) {
 			if err != nil {
 				return nil, nil, &CriticalError{"Crictial Error! session znode data is invalid"}
 			}
+			logger.Debug(fmt.Sprint("Watchlist:", session_data.Watchlist))
 			for i, watchpath := range session_data.Watchlist {
 				if watchpath == path {
 					session_data.Watchlist = append(session_data.Watchlist[:i], session_data.Watchlist[i+1:]...)
