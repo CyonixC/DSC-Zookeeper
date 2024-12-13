@@ -195,6 +195,13 @@ var err error
 request, sessions, err = Encode_watch(paths)
 ```
 
+`Get_watching_sessions()` is available to get all sessions with a watch flag on the specified path
+```go
+var sessionids []string
+var path string
+sessionids = Get_watching_sessions(path)
+```
+
 ## Sessions
 
 Updating of session information(ephermeral/watch flags) is done by other functions above. \

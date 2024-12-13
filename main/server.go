@@ -553,8 +553,16 @@ func deniedListener(denied_channel chan proposals.Request) {
 			//Instead of replying to client, retry propogaing watch flag
 			case "GETCHILDREN", "GETDATA", "EXISTS":
 				logger.Info("Retrying watch flag propagation")
-				data, _ := znode.Encode_watch(local_sessions[original_message.Remote], obj["path"].(string), false)
-				generateAndSendRequest(data, original_message)
+				//check local watch cache to ensure watch flag has not been triggered yet
+				//if triggered, do not retry
+				sessionids := znode.Get_watching_sessions(obj["path"].(string))
+				for _, sessionid := range sessionids {
+					if sessionid == local_sessions[original_message.Remote] {
+						data, _ := znode.Encode_watch(local_sessions[original_message.Remote], obj["path"].(string), false)
+						generateAndSendRequest(data, original_message)
+						break
+					}
+				}
 			default:
 				SendJSONMessageToClient(reply_msg, pending_requests[request.ReqNumber].Remote)
 				delete(pending_requests, request.ReqNumber)

@@ -207,9 +207,15 @@ func Print_watch_cache() {
 	}
 }
 
+// func to ensure watch cache is initialised
 func check_watch_init() error {
 	if !watchinit {
 		return &InitError{"Watch cache not initialised"}
 	}
 	return nil
+}
+
+// Get_watching_sessions returns the sessions watching a given path
+func Get_watching_sessions(path string) []string {
+	return watchcache[path]
 }

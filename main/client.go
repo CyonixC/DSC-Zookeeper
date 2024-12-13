@@ -348,6 +348,7 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 			// Assuming app use case of using exist to set watch flag
 			// if (msg) znode exists, need to get and set watch flag on subsequent (non-exist msg) znode
 			// basically start a new get_subscription process similar to watch_trigger
+			// TODO may want to add a sleep? or smth similar to prevent spamming of this
 			if exist {
 				topLevelPath := strings.Split(obj["path"].(string), "/")[0]
 				nextMsgNum := topicMsgMap[topLevelPath]
