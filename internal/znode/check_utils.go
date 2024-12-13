@@ -173,7 +173,7 @@ func check_create(znode *ZNode) error {
 	}
 
 	//add znode to cache upon successful check
-	znode.Version++ //write will increment version number too, but that should be fine as it is not taking in this znode instance but rather the one from the request
+	znode.Version++
 	znodecache[znode.Path] = znode
 	//add znode to parent's children
 	znodecache[parentpath].Children = append(znodecache[parentpath].Children, filepath.Base(znode.Path))
@@ -195,18 +195,17 @@ func check_update(znode *ZNode) error {
 		if znode.Version != znodecache[znode.Path].Version {
 			return &VersionError{"version number does not match latest version"}
 		}
+		znode.Version++
+		//update cache znode, only update data and version, other fields should not be updated
+		znodecache[znode.Path].Version++
 	}
-
-	znode.Version++
-	//update cache znode, only update data and version, other fields should not be updated
 	znodecache[znode.Path].Data = znode.Data
-	znodecache[znode.Path].Version++
 
 	return nil
 }
 
 // check_delete checks for conditions that must be met before deleting a znode
-// TODO does not check for children, deleting is currently recursive, all children will be deleted
+// does not check for children, deleting is currently recursive, all children will be deleted
 func check_delete(znode *ZNode) error {
 	//check znode exists
 	if _, ok := znodecache[znode.Path]; !ok {
@@ -221,7 +220,6 @@ func check_delete(znode *ZNode) error {
 	}
 
 	//remove znode from parent's children
-	//TODO better way to do this?
 	parentpath := filepath.Dir(znode.Path)
 	children := znodecache[parentpath].Children
 	for i, child := range children {

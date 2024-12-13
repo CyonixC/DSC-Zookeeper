@@ -50,7 +50,13 @@ func Update_watch_cache(sessionid string) ([]byte, []string, error) {
 	for i, path := range session_data.Watchlist {
 		//get latest version of znode to watch
 		znode, err := GetData(path)
-		if err != nil {
+		var existserr *ExistsError
+		if err != nil && errors.As(err, &existserr) {
+			//if znode doesn't exist, create a dummy znode with version 0
+			znode = &ZNode{
+				Version: 0,
+			}
+		} else if err != nil {
 			return nil, nil, err
 		}
 		//add to cache if version matches
@@ -102,7 +108,7 @@ func Encode_watch(sessionid string, path string) ([]byte, error) {
 	//get latest version of znode to watch
 	znode, err := GetData(path)
 	var existserr *ExistsError
-	if errors.As(err, &existserr) {
+	if err != nil && errors.As(err, &existserr) {
 		//It's fine if znode doesn't exist, attempting to watch nonexistant znode
 		session_data.Versionlist = append(session_data.Versionlist, 0)
 	} else if err != nil {

@@ -13,7 +13,7 @@ type write_request struct {
 	Znodes  []ZNode
 }
 
-//TODO safety to prevent clients from interacting with session znodes directly
+//TODO safety to prevent clients from interacting with session znodes directly?
 
 // Encode_create creates a request to create a znode
 func Encode_create(path string, data []byte, ephemeral bool, sequential bool, sessionid string) ([]byte, error) {
