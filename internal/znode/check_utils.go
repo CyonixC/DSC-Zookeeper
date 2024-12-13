@@ -50,13 +50,13 @@ func Check(data []byte) ([]byte, error) {
 
 		return updateddata, nil
 	case "setdata":
-		err = check_update(&req.Znodes[0])
+		updated_znode, err := check_update(&req.Znodes[0])
 		if err != nil {
 			return nil, err
 		}
 
 		//update version number in request
-		updateddata, err := json.Marshal(&write_request{Request: "setdata", Znodes: req.Znodes})
+		updateddata, err := json.Marshal(&write_request{Request: "setdata", Znodes: []ZNode{updated_znode}})
 		if err != nil {
 			return nil, err
 		}
@@ -79,14 +79,17 @@ func Check(data []byte) ([]byte, error) {
 		return data, nil
 
 	case "watch_trigger":
+		updated_znodes := make([]ZNode, 0)
 		//effectively multiple setdata operations
-		for i := 1; i < len(req.Znodes); {
-			err = check_update(&req.Znodes[i])
+		for i := 0; i < len(req.Znodes); {
+			updated_znode, err := check_update(&req.Znodes[i])
 			if err != nil {
 				return nil, err
 			}
+			updated_znodes = append(updated_znodes, updated_znode)
+			i++
 		}
-		updateddata, err := json.Marshal(&write_request{Request: "watch_trigger", Znodes: req.Znodes})
+		updateddata, err := json.Marshal(&write_request{Request: "watch_trigger", Znodes: updated_znodes})
 		if err != nil {
 			return nil, err
 		}
@@ -182,10 +185,10 @@ func check_create(znode *ZNode) error {
 }
 
 // check_update checks for conditions that must be met before overwriting
-func check_update(znode *ZNode) error {
+func check_update(znode *ZNode) (ZNode, error) {
 	//check znode exists
 	if _, ok := znodecache[znode.Path]; !ok {
-		return &ExistsError{"znode already exists"}
+		return ZNode{}, &ExistsError{"znode already exists"}
 	}
 
 	logger.Debug(fmt.Sprint("Path: ", znode.Path, " znode.Version: ", znode.Version, " znodecache: ", znodecache[znode.Path].Version))
@@ -193,15 +196,23 @@ func check_update(znode *ZNode) error {
 	//check version match if not -1
 	if znode.Version != -1 {
 		if znode.Version != znodecache[znode.Path].Version {
-			return &VersionError{"version number does not match latest version"}
+			return ZNode{}, &VersionError{"version number does not match latest version"}
 		}
 		znode.Version++
 		//update cache znode, only update data and version, other fields should not be updated
 		znodecache[znode.Path].Version++
 	}
 	znodecache[znode.Path].Data = znode.Data
+	updated_znode := ZNode{
+		Path:       znode.Path,
+		Data:       znode.Data,
+		Version:    znode.Version,
+		Ephemeral:  znode.Ephemeral,
+		Sequential: znode.Sequential,
+		Children:   znode.Children,
+	}
 
-	return nil
+	return updated_znode, nil
 }
 
 // check_delete checks for conditions that must be met before deleting a znode
