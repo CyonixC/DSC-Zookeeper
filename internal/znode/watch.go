@@ -4,6 +4,7 @@ package znode
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"local/zookeeper/internal/logger"
 	"path/filepath"
@@ -100,9 +101,12 @@ func Encode_watch(sessionid string, path string) ([]byte, error) {
 	logger.Debug(fmt.Sprint("Watchlist:", session_data.Watchlist))
 	//get latest version of znode to watch
 	znode, err := GetData(path)
-	if err != nil {
+	var existserr *ExistsError
+	if errors.As(err, &existserr) {
 		//It's fine if znode doesn't exist, attempting to watch nonexistant znode
-		session_data.Versionlist = append(session_data.Versionlist, 1)
+		session_data.Versionlist = append(session_data.Versionlist, 0)
+	} else if err != nil {
+		return nil, err
 	} else {
 		//update versionlist if it exists
 		session_data.Versionlist = append(session_data.Versionlist, znode.Version)
