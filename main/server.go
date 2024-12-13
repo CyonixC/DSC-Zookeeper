@@ -97,7 +97,8 @@ func SendInfoMessageToClient(info string, client string) {
 	SendJSONMessageToClient(reply_msg, client)
 }
 
-// Listen for messages
+// Listen for network messages from client or server
+// Call different actions based on origin, msg type and msg header
 func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 	for network_msg := range recv_channel {
 		this_client := network_msg.Remote
@@ -190,7 +191,9 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				generateAndSendRequest(data, network_msg)
 
 			case "PUBLISH":
-				//Check if topic exists
+				//If topic doesn't exist, create it.
+				//Else create a new message
+
 				exists := znode.Exists(obj["topic"].(string))
 				if !exists { //Create the topic if it doesn't exist
 					data, _ := znode.Encode_create(obj["topic"].(string), []byte{}, false, false, obj["session_id"].(string))
@@ -198,6 +201,31 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				} else { //Else, create message with seq flag
 					path := obj["topic"].(string) + "/msg"
 					data, _ := znode.Encode_create(path, []byte(obj["data"].(string)), false, true, obj["session_id"].(string))
+					generateAndSendRequest(data, network_msg)
+				}
+
+			case "SUBSCRIBE":
+				//If topic doesn't exist, create it.
+				//Else subscribe to the topic
+
+				exists := znode.Exists(obj["topic"].(string))
+				if !exists { //Create the topic if it doesn't exist
+					data, _ := znode.Encode_create(obj["topic"].(string), []byte{}, false, false, obj["session_id"].(string))
+					
+					obj["newtopic"] = true //Append a flag to the message so that we know we still need to add the watch flag later
+					modifiedMessage, _ := json.Marshal(obj)
+					network_msg.Message = modifiedMessage
+					generateAndSendRequest(data, network_msg)
+				} else { //Else, watch the next msg in that topic (highest message number +1, currently nonexistant)
+					children, _ := znode.GetChildren(obj["topic"].(string))
+					nextmsgnum := findMaxMessageNumber(children) + 1
+					path := obj["topic"].(string) + "/msg" + strconv.Itoa(nextmsgnum)
+					logger.Debug("Creating watch flag on " + path)
+					data, _ := znode.Encode_watch(obj["session_id"].(string), path)
+
+					obj["newtopic"] = false
+					modifiedMessage, _ := json.Marshal(obj)
+					network_msg.Message = modifiedMessage
 					generateAndSendRequest(data, network_msg)
 				}
 
@@ -320,6 +348,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 }
 
 //Listener for proposal commit messages
+//Reply to the client with an OK
 func committedListener(committed_channel chan proposals.Request) {
 	for request := range committed_channel {
 		logger.Info(fmt.Sprint("Receive commit ", request.ReqNumber, ": Type ", request.ReqType))
@@ -377,8 +406,8 @@ func committedListener(committed_channel chan proposals.Request) {
 				delete(local_sessions, original_message.Remote)
 
 			case "PUBLISH":
-				//Could mean either the message has been published (send OK to client)
-				//Or just the topic has been created (need to create the message now)
+				//If the message has been published, send OK to client
+				//If just the topic has been created, generate new proposal to publish the message now.
 
 				children, _ := znode.GetChildren(obj["topic"].(string))
 				if len(children) == 0 { //Topic was just created, no messages created yet
@@ -392,6 +421,31 @@ func committedListener(committed_channel chan proposals.Request) {
 				} else { //Message successfully added
 					reply_msg = map[string]interface{}{
 						"message": "PUBLISH_OK",
+					}
+				}
+
+			case "SUBSCRIBE":
+				//If the topic has been subscribed, send OK to client
+				//If just the topic has been created, generate new proposal to subscribe to the topic now.
+				
+				if obj["newtopic"].(bool) { //Topic was just created, watch flag not set yet
+					children, _ := znode.GetChildren(obj["topic"].(string))
+					nextmsgnum := findMaxMessageNumber(children) + 1
+					path := obj["topic"].(string) + "/msg" + strconv.Itoa(nextmsgnum)
+					logger.Debug("Creating watch flag on " + path)
+					data, _ := znode.Encode_watch(obj["session_id"].(string), path)
+
+					obj["newtopic"] = false
+					modifiedMessage, _ := json.Marshal(obj)
+					original_message.Message = modifiedMessage
+					generateAndSendRequest(data, original_message)
+
+					reply_msg = map[string]interface{}{
+						"message": "CREATE_TOPIC_OK",
+					}
+				} else {
+					reply_msg = map[string]interface{}{
+						"message": "SUBSCRIBE_OK",
 					}
 				}
 
@@ -434,7 +488,9 @@ func deniedListener(denied_channel chan proposals.Request) {
 		if exists {
 			var message interface{}
 			json.Unmarshal([]byte(original_message.Message), &message)
-			var reply_msg interface{}
+			reply_msg := map[string]interface{}{
+				"message": "REJECT",
+			}
 			obj := message.(map[string]interface{})
 			switch obj["message"] {
 			case "START_SESSION":
@@ -473,7 +529,7 @@ func generateUniqueRequestID() int {
 	}
 }
 
-// Monitor TCP connection
+// Monitor TCP connection for failures
 func monitorConnectionToClient(failedSends chan string) {
 	for failedNode := range failedSends {
 		//If it's my client, remove from local_sessions
@@ -600,4 +656,23 @@ func removeExpiredSessions() {
 		delete(session_id_to_timestamp, session_id)
 	}
 	sessid_to_ts_mu.Unlock()
+}
+
+// Helper func for finding the max message number from a list of znodes
+// If empty, return 0
+func findMaxMessageNumber(messages []string) int {
+	maxNum := 0
+	for _, msg := range messages {
+		// Strip the "msg" prefix and convert to an integer
+		numStr := strings.TrimPrefix(msg, "msg")
+		num, err := strconv.Atoi(numStr)
+		if err != nil {
+			continue // Skip if there's an error in conversion
+		}
+		// Update the max number
+		if num > maxNum {
+			maxNum = num
+		}
+	}
+	return maxNum
 }

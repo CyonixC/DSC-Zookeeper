@@ -77,7 +77,7 @@ func ClientMain() {
 				continue
 			}
 			if len(parts) != 2 {
-				fmt.Println("Usage: publish <topic>")
+				fmt.Println("Usage: subscribe <topic>")
 				continue
 			}
 
@@ -124,6 +124,25 @@ func ClientMain() {
 				"data":       data,
 				"ephemeral":  ephemeral,
 				"sequential": sequential,
+			}
+			SendJSONMessage(msg, connectedServer)
+
+		case "delete":
+			if connectedServer == "" {
+				logger.Error("There is no session ongoing to delete")
+				continue
+			}
+
+			if len(parts) != 2 {
+				logger.Error("Missing path for 'delete' command")
+				continue
+			}
+			path := strings.TrimSpace(parts[1])
+			msg := map[string]interface{}{
+				"message":    "DELETE",
+				"session_id": sessionID,
+				"path":       path,
+				"version":    versions[path],
 			}
 			SendJSONMessage(msg, connectedServer)
 
@@ -200,25 +219,6 @@ func ClientMain() {
 			}
 			SendJSONMessage(msg, connectedServer)
 
-		case "delete":
-			if connectedServer == "" {
-				logger.Error("There is no session ongoing to delete")
-				continue
-			}
-
-			if len(parts) != 2 {
-				logger.Error("Missing path for 'delete' command")
-				continue
-			}
-			path := strings.TrimSpace(parts[1])
-			msg := map[string]interface{}{
-				"message":    "DELETE",
-				"session_id": sessionID,
-				"path":       path,
-				"version":    versions[path],
-			}
-			SendJSONMessage(msg, connectedServer)
-
 		default:
 			fmt.Printf("Unknown command: %s\n", command)
 			fmt.Println("Available commands: startsession, endsession, publish, subscribe")
@@ -263,19 +263,32 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 		case "INFO":
 			fmt.Println(obj["info"])
 		case "START_SESSION_OK":
-			// Store the new ID
+			// Store the new session ID
 			sessionID = obj["session_id"].(string)
 			fmt.Println("Session established successfully.")
 		case "REESTABLISH_SESSION_OK":
 			fmt.Println("Session reestablished successfully.")
 		case "REESTABLISH_SESSION_REJECT":
+			// Remove session ID
 			sessionID = ""
 			fmt.Println("Session has expired, please startsession again.")
 		case "END_SESSION_OK":
 			sessionID = ""
 			fmt.Println("Session ended successfully.")
+		case "CREATE_TOPIC_OK":
+			fmt.Println("Topic created successfully.")
+		case "PUBLISH_OK":
+			fmt.Println("Message published successfully.")
+		case "SUBSCRIBE_OK":
+			fmt.Println("Successfully subscribed to topic.")
+		case "WATCH_TRIGGER":
+			fmt.Printf("Subscribed topic has been modified.")
 
 		/// EXTRA COMMANDS: for testing & demonstration of zookeeper
+		case "SYNC_OK":		
+			path := obj["path"].(string)
+			versions[path]++
+			fmt.Println("Sync Ok")
 		case "CREATE_OK":
 			path := obj["path"].(string)
 			if _, exists := versions[path]; !exists {
@@ -286,10 +299,6 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 			path := obj["path"].(string)
 			delete(versions, path)
 			fmt.Println("Delete Ok")
-		case "SYNC_OK":
-			path := obj["path"].(string)
-			versions[path]++
-			fmt.Println("Sync Ok")
 		case "SETDATA_OK":
 			path := obj["path"].(string)
 			versions[path]++
@@ -311,7 +320,6 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 				return
 			}
 			logger.Info(fmt.Sprint(string(jsonData)))
-		case "WATCH_TRIGGER":
 			path := obj["path"].(string)
 			fmt.Println("Watch flag triggered for path: ", path)
 		}
@@ -324,16 +332,7 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 // If no session ID is stored, store the new ID.
 func findLiveServer() bool {
 	servers := config.Servers
-
-	//For debugging: reverse the list of servers so that client 1 connects to the leader
-	if os.Getenv("NAME") == "client1" {
-		reversed := make([]string, len(servers))
-		for i := 0; i < len(servers); i++ {
-			reversed[i] = servers[len(servers)-i-1]
-		}
-		servers = reversed
-	}
-
+	
 	for server := range servers {
 		var msg interface{}
 		if sessionID == "" {

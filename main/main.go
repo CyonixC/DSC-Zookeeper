@@ -10,6 +10,7 @@ import (
 
 var config configReader.Config
 
+// True main entry that calls either ServerMain or ClientMain depending on configuration.
 func main() {
 	mode := os.Getenv("MODE") // "Server" or "Client"
 	handler := logger.NewColouredTextHandler(slog.LevelDebug)
