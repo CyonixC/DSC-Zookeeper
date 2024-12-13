@@ -80,8 +80,8 @@ func Check(data []byte) ([]byte, error) {
 
 	case "watch_trigger":
 		//effectively multiple setdata operations
-		for _, znode := range req.Znodes {
-			err = check_update(&znode)
+		for i := 1; i < len(req.Znodes); {
+			err = check_update(&req.Znodes[i])
 			if err != nil {
 				return nil, err
 			}

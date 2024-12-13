@@ -282,7 +282,7 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 		case "SUBSCRIBE_OK":
 			fmt.Println("Successfully subscribed to topic.")
 		case "WATCH_TRIGGER":
-			fmt.Printf("Subscribed topic has been modified.")
+			fmt.Println("Subscribed topic has been modified.")
 
 		/// EXTRA COMMANDS: for testing & demonstration of zookeeper
 		case "SYNC_OK":		
@@ -332,7 +332,7 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 // If no session ID is stored, store the new ID.
 func findLiveServer() bool {
 	servers := config.Servers
-	
+
 	for server := range servers {
 		var msg interface{}
 		if sessionID == "" {

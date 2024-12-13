@@ -175,6 +175,7 @@ func Check_watch(paths []string) ([]byte, []string, error) {
 		Request: "watch_trigger",
 		Znodes:  znodes,
 	}
+	logger.Debug(fmt.Sprint("Update watch session req: ", req, "Sessions: ", sessions))
 	data, err := json.Marshal(req)
 	if err != nil {
 		return nil, nil, err
