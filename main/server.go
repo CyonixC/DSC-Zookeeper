@@ -211,7 +211,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				exists := znode.Exists(obj["topic"].(string))
 				if !exists { //Create the topic if it doesn't exist
 					data, _ := znode.Encode_create(obj["topic"].(string), []byte{}, false, false, obj["session_id"].(string))
-					
+
 					obj["newtopic"] = true //Append a flag to the message so that we know we still need to add the watch flag later
 					modifiedMessage, _ := json.Marshal(obj)
 					network_msg.Message = modifiedMessage
@@ -221,7 +221,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					nextmsgnum := findMaxMessageNumber(children) + 1
 					path := obj["topic"].(string) + "/msg_" + strconv.Itoa(nextmsgnum)
 					logger.Debug("Creating watch flag on " + path)
-					data, _ := znode.Encode_watch(obj["session_id"].(string), path)
+					data, _ := znode.Encode_watch(obj["session_id"].(string), path, true)
 
 					obj["newtopic"] = false
 					modifiedMessage, _ := json.Marshal(obj)
@@ -242,15 +242,18 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 						data := string(z.Data)
 						msg := map[string]interface{}{
 							"message": "SUBSCRIBED_MESSAGE",
-							"topic": topic,
-							"data": data,
+							"topic":   topic,
+							"data":    data,
 						}
 						SendJSONMessageToClient(msg, this_client)
 						nextmsgnum++
 					} else {
-						logger.Debug("Creating watch flag on " + path)
-						data, _ := znode.Encode_watch(obj["session_id"].(string), path)
-						generateAndSendRequest(data, network_msg)
+						reply_msg := map[string]interface{}{
+							"message": "GET_SUBSCRIPTION_OK",
+							"topic":   obj["topic"].(string),
+							"nextMsg": nextmsgnum,
+						}
+						SendJSONMessageToClient(reply_msg, this_client)
 						break
 					}
 				}
@@ -305,7 +308,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
 				if watch {
-					request, err := znode.Encode_watch(local_sessions[this_client], obj["path"].(string))
+					request, err := znode.Encode_watch(local_sessions[this_client], obj["path"].(string), true)
 					if err != nil {
 						SendInfoMessageToClient(err.Error(), this_client)
 					}
@@ -325,7 +328,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
 				if watch {
-					request, err := znode.Encode_watch(local_sessions[this_client], obj["path"].(string))
+					request, err := znode.Encode_watch(local_sessions[this_client], obj["path"].(string), true)
 					if err != nil {
 						SendInfoMessageToClient(err.Error(), this_client)
 					}
@@ -348,7 +351,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
 				if watch {
-					request, err := znode.Encode_watch(local_sessions[this_client], obj["path"].(string))
+					request, err := znode.Encode_watch(local_sessions[this_client], obj["path"].(string), true)
 					if err != nil {
 						SendInfoMessageToClient(err.Error(), this_client)
 					}
@@ -373,8 +376,8 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 	}
 }
 
-//Listener for proposal commit messages
-//Reply to the client with an OK
+// Listener for proposal commit messages
+// Reply to the client with an OK
 func committedListener(committed_channel chan proposals.Request) {
 	for request := range committed_channel {
 		logger.Info(fmt.Sprint("Receive commit ", request.ReqNumber, ": Type ", request.ReqType))
@@ -455,13 +458,13 @@ func committedListener(committed_channel chan proposals.Request) {
 			case "SUBSCRIBE":
 				//If the topic has been subscribed, send OK to client
 				//If just the topic has been created, generate new proposal to subscribe to the topic now.
-				
+
 				if obj["newtopic"].(bool) { //Topic was just created, watch flag not set yet
 					children, _ := znode.GetChildren(obj["topic"].(string))
 					nextmsgnum := findMaxMessageNumber(children) + 1
 					path := obj["topic"].(string) + "/msg_" + strconv.Itoa(nextmsgnum)
 					logger.Debug("Creating watch flag on " + path)
-					data, _ := znode.Encode_watch(obj["session_id"].(string), path)
+					data, _ := znode.Encode_watch(obj["session_id"].(string), path, true)
 
 					obj["newtopic"] = false
 					modifiedMessage, _ := json.Marshal(obj)
@@ -476,7 +479,7 @@ func committedListener(committed_channel chan proposals.Request) {
 					nextmsgnum := findMaxMessageNumber(children) + 1
 					reply_msg = map[string]interface{}{
 						"message": "SUBSCRIBE_OK",
-						"topic": obj["topic"].(string),
+						"topic":   obj["topic"].(string),
 						"nextMsg": nextmsgnum,
 					}
 				}
@@ -486,7 +489,7 @@ func committedListener(committed_channel chan proposals.Request) {
 				nextmsgnum := findMaxMessageNumber(children) + 1
 				reply_msg = map[string]interface{}{
 					"message": "GET_SUBSCRIPTION_OK",
-					"topic": obj["topic"].(string),
+					"topic":   obj["topic"].(string),
 					"nextMsg": nextmsgnum,
 				}
 
@@ -512,7 +515,7 @@ func committedListener(committed_channel chan proposals.Request) {
 					"path":    obj["path"],
 				}
 			default:
-				continue			
+				continue
 			}
 
 			SendJSONMessageToClient(reply_msg, original_message.Remote)
@@ -521,7 +524,7 @@ func committedListener(committed_channel chan proposals.Request) {
 	}
 }
 
-//Listener for proposal denied messages
+// Listener for proposal denied messages
 func deniedListener(denied_channel chan proposals.Request) {
 	for request := range denied_channel {
 		logger.Info(fmt.Sprint("Receive denied ", request.ReqNumber, ": Type ", request.ReqType))
@@ -531,19 +534,29 @@ func deniedListener(denied_channel chan proposals.Request) {
 		if exists {
 			var message interface{}
 			json.Unmarshal([]byte(original_message.Message), &message)
+			obj := message.(map[string]interface{})
 			reply_msg := map[string]interface{}{
 				"message": "REJECT",
 			}
-			obj := message.(map[string]interface{})
 			switch obj["message"] {
 			case "START_SESSION":
 				reply_msg = map[string]interface{}{
 					"message": "START_SESSION_REJECT",
 				}
-			}
 
-			SendJSONMessageToClient(reply_msg, pending_requests[request.ReqNumber].Remote)
-			delete(pending_requests, request.ReqNumber)
+				SendJSONMessageToClient(reply_msg, pending_requests[request.ReqNumber].Remote)
+				delete(pending_requests, request.ReqNumber)
+			//read ops only send a proposal when watch is true, hence if failed, failure to propogate watch flag
+			//BUT will successfully add to local watch cache
+			//Instead of replying to client, retry propogaing watch flag
+			case "GETCHILDREN", "GETDATA", "EXISTS":
+				logger.Info("Retrying watch flag propagation")
+				data, _ := znode.Encode_watch(local_sessions[original_message.Remote], obj["path"].(string), false)
+				generateAndSendRequest(data, original_message)
+			default:
+				SendJSONMessageToClient(reply_msg, pending_requests[request.ReqNumber].Remote)
+				delete(pending_requests, request.ReqNumber)
+			}
 		}
 	}
 }

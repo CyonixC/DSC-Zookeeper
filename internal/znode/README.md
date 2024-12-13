@@ -169,14 +169,16 @@ children, err = GetChildren(path)
 ## Handling Watch Flags
 
 Use `Encode_watch()` to handle any watch flags that come with read requests. \
-It will update the watch cache and return a write request to be sent to the leader to propogate the watch flag. \
+It will update the watch cache if cache is true and return a write request to be sent to the leader to propogate the watch flag. \
+By default, use cache = true, only false if attempting to repropogate watchflag. \
 
 ```go
 var sessionid string
 var path string
 var request []byte
+var cache true
 var err error
-request, err = Encode_watch(sessionid, path)
+request, err = Encode_watch(sessionid, path, cache)
 ```
 
 Use `Check_watch()` after commiting a write request with `Write()`. \

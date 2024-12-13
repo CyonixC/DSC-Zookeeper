@@ -84,7 +84,7 @@ func Update_watch_cache(sessionid string) ([]byte, []string, error) {
 
 // Encode_watch is a wrapper that calls Encode_setdata to update a session's watchlist
 // will also add session+path to watch cache
-func Encode_watch(sessionid string, path string) ([]byte, error) {
+func Encode_watch(sessionid string, path string, cache bool) ([]byte, error) {
 	err := check_watch_init()
 	if err != nil {
 		return nil, err
@@ -115,7 +115,9 @@ func Encode_watch(sessionid string, path string) ([]byte, error) {
 		session_data.Versionlist = append(session_data.Versionlist, znode.Version)
 	}
 	//add session to watch cache
-	watchcache[path] = append(watchcache[path], sessionid)
+	if cache {
+		watchcache[path] = append(watchcache[path], sessionid)
+	}
 	session_znode.Data, err = json.Marshal(session_data)
 	if err != nil {
 		return nil, err

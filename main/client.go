@@ -7,6 +7,7 @@ import (
 	connectionManager "local/zookeeper/internal/ConnectionManager"
 	"local/zookeeper/internal/logger"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -295,8 +296,8 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 			if topicExists {
 				msg := map[string]interface{}{
 					"message":    "GET_SUBSCRIPTION",
-					"topic": 	  topLevelPath,
-					"nextMsg": 	  nextMsgNum,
+					"topic":      topLevelPath,
+					"nextMsg":    nextMsgNum,
 					"session_id": sessionID,
 				}
 				SendJSONMessage(msg, connectedServer)
@@ -306,9 +307,17 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 		case "GET_SUBSCRIPTION_OK":
 			//Update the next message to watch for
 			topicMsgMap[obj["topic"].(string)] = int(obj["nextMsg"].(float64))
+			//Set watch flag for the topic
+			path := obj["topic"].(string) + "/msg_" + strconv.Itoa(int(obj["nextMsg"].(float64)))
+			msg := map[string]interface{}{
+				"message": "EXISTS",
+				"path":    path,
+				"watch":   "true",
+			}
+			SendJSONMessage(msg, connectedServer)
 
 		/// EXTRA COMMANDS: for testing & demonstration of zookeeper
-		case "SYNC_OK":		
+		case "SYNC_OK":
 			path := obj["path"].(string)
 			versions[path]++
 			fmt.Println("Sync Ok")
@@ -335,7 +344,7 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 			logger.Info(fmt.Sprint("Children is ", children))
 		case "EXISTS_OK":
 			exist = obj["exists"].(bool)
-			logger.Info(fmt.Sprint("It ", exist, "Exists"))
+			logger.Info(fmt.Sprint("Exists = ", exist))
 		case "GETDATA_OK":
 			jsonData, err := json.MarshalIndent(obj["znode"], "", "  ")
 			if err != nil {
@@ -345,6 +354,10 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 			logger.Info(fmt.Sprint(string(jsonData)))
 			path := obj["path"].(string)
 			fmt.Println("Watch flag triggered for path: ", path)
+		case "WATCH_FAIL":
+			logger.Error(fmt.Sprint("Watch flag was set but not propogated"))
+		case "REJECT":
+			logger.Error(fmt.Sprint("Some request has been rejected"))
 		}
 	}
 }
