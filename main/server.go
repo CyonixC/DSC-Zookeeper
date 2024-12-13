@@ -555,6 +555,7 @@ func deniedListener(denied_channel chan proposals.Request) {
 				logger.Info("Retrying watch flag propagation")
 				//check local watch cache to ensure watch flag has not been triggered yet
 				//if triggered, do not retry
+				// TODO may want to add a sleep? or smth similar to prevent spamming of this
 				sessionids := znode.Get_watching_sessions(obj["path"].(string))
 				for _, sessionid := range sessionids {
 					if sessionid == local_sessions[original_message.Remote] {
