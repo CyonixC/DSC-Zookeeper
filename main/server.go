@@ -189,6 +189,18 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				logger.Info(fmt.Sprint("Sending session end request: ", obj["session_id"].(string), " to leader"))
 				generateAndSendRequest(data, network_msg)
 
+			case "PUBLISH":
+				//Check if topic exists
+				exists := znode.Exists(obj["topic"].(string))
+				if !exists { //Create the topic if it doesn't exist
+					data, _ := znode.Encode_create(obj["topic"].(string), []byte{}, false, false, obj["session_id"].(string))
+					generateAndSendRequest(data, network_msg)
+				} else { //Else, create message with seq flag
+					path := obj["topic"].(string) + "/msg"
+					data, _ := znode.Encode_create(path, []byte(obj["data"].(string)), false, true, obj["session_id"].(string))
+					generateAndSendRequest(data, network_msg)
+				}
+
 			/// EXTRA COMMANDS: for testing & demonstration of zookeeper
 			case "SYNC":
 				data, err := znode.Encode_sync()
@@ -215,7 +227,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
-				logger.Info(fmt.Sprint("Sending delete request"))
+				logger.Info("Sending delete request")
 				generateAndSendRequest(data, network_msg)
 			case "SETDATA":
 				data := []byte(obj["data"].(string))
@@ -225,14 +237,14 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
-				logger.Info(fmt.Sprint("Setting data"))
+				logger.Info("Setting data")
 				generateAndSendRequest(request, network_msg)
 			case "GETCHILDREN":
 				children, err := znode.GetChildren(obj["path"].(string))
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
-				logger.Info(fmt.Sprint("Getting children"))
+				logger.Info("Getting children")
 				watchStr := obj["watch"].(string)
 				watch, err := strconv.ParseBool(watchStr)
 				if err != nil {
@@ -243,7 +255,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					if err != nil {
 						SendInfoMessageToClient(err.Error(), this_client)
 					}
-					logger.Info(fmt.Sprint("Adding watch flag"))
+					logger.Info("Adding watch flag")
 					generateAndSendRequest(request, network_msg)
 				}
 				reply_msg := map[string]interface{}{
@@ -263,7 +275,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					if err != nil {
 						SendInfoMessageToClient(err.Error(), this_client)
 					}
-					logger.Info(fmt.Sprint("Adding watch flag"))
+					logger.Info("Adding watch flag")
 					generateAndSendRequest(request, network_msg)
 				}
 				reply_msg := map[string]interface{}{
@@ -274,7 +286,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 			case "GETDATA":
 				znode_data, err := znode.GetData(obj["path"].(string))
 				if err != nil {
-					logger.Error(fmt.Sprint("There is error in getdata"))
+					logger.Error("There is error in getdata")
 				}
 				watchStr := obj["watch"].(string)
 				watch, err := strconv.ParseBool(watchStr)
@@ -286,7 +298,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					if err != nil {
 						SendInfoMessageToClient(err.Error(), this_client)
 					}
-					logger.Info(fmt.Sprint("Adding watch flag"))
+					logger.Info("Adding watch flag")
 					generateAndSendRequest(request, network_msg)
 				}
 				reply_msg := map[string]interface{}{
@@ -363,6 +375,27 @@ func committedListener(committed_channel chan proposals.Request) {
 					"message": "END_SESSION_OK",
 				}
 				delete(local_sessions, original_message.Remote)
+
+			case "PUBLISH":
+				//Could mean either the message has been published (send OK to client)
+				//Or just the topic has been created (need to create the message now)
+
+				children, _ := znode.GetChildren(obj["topic"].(string))
+				if len(children) == 0 { //Topic was just created, no messages created yet
+					//Create msg and send a new request
+					path := obj["topic"].(string) + "/msg"
+					data, _ := znode.Encode_create(path, []byte(obj["data"].(string)), false, true, obj["session_id"].(string))
+					generateAndSendRequest(data, original_message)
+					reply_msg = map[string]interface{}{
+						"message": "CREATE_TOPIC_OK",
+					}
+				} else { //Message successfully added
+					reply_msg = map[string]interface{}{
+						"message": "PUBLISH_OK",
+					}
+				}
+
+			/// EXTRA COMMANDS: for testing & demonstration of zookeeper
 			case "CREATE":
 				reply_msg = map[string]interface{}{
 					"message": "CREATE_OK",
@@ -383,7 +416,6 @@ func committedListener(committed_channel chan proposals.Request) {
 					"message": "SYNC_OK",
 					"path":    obj["path"],
 				}
-
 			}
 
 			SendJSONMessageToClient(reply_msg, original_message.Remote)

@@ -47,24 +47,25 @@ func ClientMain() {
 				"session_id": sessionID,
 			}
 			SendJSONMessage(msg, connectedServer)
-			
+
 		//Publish some data to a topic. Creates a topic if it does not exist.
-		case "publish": 
+		case "publish":
 			if connectedServer == "" {
 				fmt.Println("Error: Session has not started")
 				continue
 			}
-			if len(parts) != 3{
+			if len(parts) != 3 {
 				fmt.Println("Usage: publish <topic> <data>")
+				continue
 			}
 
-			path := strings.TrimSpace(parts[1])
+			topic := strings.TrimSpace(parts[1])
 			data := strings.TrimSpace(parts[2])
 
 			msg := map[string]interface{}{
 				"message":    "PUBLISH",
 				"session_id": sessionID,
-				"path":       path,
+				"topic":      topic,
 				"data":       data,
 			}
 			SendJSONMessage(msg, connectedServer)
@@ -75,23 +76,24 @@ func ClientMain() {
 				fmt.Println("Error: Session has not started")
 				continue
 			}
-			if len(parts) != 2{
+			if len(parts) != 2 {
 				fmt.Println("Usage: publish <topic>")
+				continue
 			}
 
-			path := strings.TrimSpace(parts[1])
+			topic := strings.TrimSpace(parts[1])
 
 			msg := map[string]interface{}{
 				"message":    "SUBSCRIBE",
 				"session_id": sessionID,
-				"path":       path,
+				"topic":      topic,
 			}
 			SendJSONMessage(msg, connectedServer)
 
 		/// EXTRA COMMANDS: for testing & demonstration of zookeeper
 		case "sync":
 			if connectedServer == "" {
-				logger.Error(fmt.Sprint("There is no session ongoing to sync"))
+				logger.Error("There is no session ongoing to sync")
 				continue
 			}
 			msg := map[string]interface{}{
@@ -99,7 +101,7 @@ func ClientMain() {
 				"session_id": sessionID,
 			}
 			SendJSONMessage(msg, connectedServer)
-			
+
 		case "create":
 			if connectedServer == "" {
 				logger.Error("There is no session ongoing to create")
@@ -143,10 +145,10 @@ func ClientMain() {
 				"version": versions[path],
 			}
 			SendJSONMessage(msg, connectedServer)
-		
+
 		case "getchildren":
 			if connectedServer == "" {
-				logger.Error(fmt.Sprint("There is no session"))
+				logger.Error("There is no session")
 				continue
 			}
 			if len(parts) != 3 {
@@ -161,10 +163,10 @@ func ClientMain() {
 				"watch":   watch,
 			}
 			SendJSONMessage(msg, connectedServer)
-		
+
 		case "exists":
 			if connectedServer == "" {
-				logger.Error(fmt.Sprint("There is no session"))
+				logger.Error("There is no session")
 				continue
 			}
 			if len(parts) != 2 {
@@ -179,10 +181,10 @@ func ClientMain() {
 				"watch":   watch,
 			}
 			SendJSONMessage(msg, connectedServer)
-		
+
 		case "getdata":
 			if connectedServer == "" {
-				logger.Error(fmt.Sprint("There is no session"))
+				logger.Error("There is no session")
 				continue
 			}
 			if len(parts) != 2 {
@@ -272,7 +274,7 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 		case "END_SESSION_OK":
 			sessionID = ""
 			fmt.Println("Session ended successfully.")
-			
+
 		/// EXTRA COMMANDS: for testing & demonstration of zookeeper
 		case "CREATE_OK":
 			path := obj["path"].(string)
