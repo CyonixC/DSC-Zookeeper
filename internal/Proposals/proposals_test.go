@@ -65,6 +65,55 @@ func TestPropLogWriteRead3(t *testing.T) {
 	}
 }
 
+func TestPropLogRecover(t *testing.T) {
+	cont := []byte{0x45, 0xfe, 0xe6}
+	prop1 := Proposal{
+		PropType: StateChange,
+		CountNum: 1,
+		EpochNum: 0,
+		Content:  cont,
+	}
+	prop2 := Proposal{
+		PropType: StateChange,
+		CountNum: 2,
+		EpochNum: 1,
+		Content:  cont,
+	}
+	prop3 := Proposal{
+		PropType: StateChange,
+		CountNum: 1,
+		EpochNum: 2,
+		Content:  cont,
+	}
+	if err := SaveProposal(prop1); err != nil {
+		fmt.Println(err)
+	}
+	defer func() {
+		propPath := filepath.Join(".", proposalsLog)
+		if err := os.RemoveAll(propPath); err != nil {
+			fmt.Println(err)
+		}
+	}()
+	if err := SaveProposal(prop2); err != nil {
+		fmt.Println(err)
+	}
+	if err := SaveProposal(prop3); err != nil {
+		fmt.Println(err)
+	}
+
+	ep, cnt := RestoreZXIDFromDisk()
+	if ep != 2 || cnt != 1 {
+		t.Errorf("Failed to restore ZXID number; expected epoch 2 and count 1, got epoch %d and count %d", ep, cnt)
+	}
+}
+
+func TestEmptyRecoverZXID(t *testing.T) {
+	ep, cnt := RestoreZXIDFromDisk()
+	if ep != 0 || cnt != 0 {
+		t.Errorf("Failed to restore ZXID number; expected epoch 0 and count 0, got epoch %d and count %d", ep, cnt)
+	}
+}
+
 func TestPropLogOverread(t *testing.T) {
 	cont := []byte{0x45, 0xfe, 0xe6}
 	prop1 := Proposal{

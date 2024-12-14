@@ -27,7 +27,7 @@ func proposalWriter(newProposalChan chan Proposal) {
 // Handles sending of messages. This reads from the `sendingQueue` queue and sends the messages in order.
 func messageSender() {
 	for {
-		for sendingQueue.isEmpty() {
+		for sendingQueue.isEmpty() || election.Coordinator.GetCoordinator() == "" {
 			continue
 		}
 		toSend, _ := sendingQueue.dequeue()

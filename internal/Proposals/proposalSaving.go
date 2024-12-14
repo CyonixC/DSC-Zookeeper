@@ -100,6 +100,27 @@ func ReadProposals(epoch uint16, readCount int) ([]Proposal, error) {
 	return props, nil
 }
 
+func RestoreZXIDFromDisk() (epoch uint16, count uint16) {
+	propLogFolder := filepath.Join(".", proposalsLog)
+	files, err := os.ReadDir(propLogFolder)
+	if err != nil {
+		return 0, 0
+	}
+	epoch = 0
+	count = 0
+	for _, file := range files {
+		newEpoch, err := strconv.Atoi(file.Name())
+		if err != nil {
+			continue
+		}
+		if epoch < uint16(newEpoch) {
+			epoch = uint16(newEpoch)
+			count, _ = getEpochHighestCount(epoch)
+		}
+	}
+	return
+}
+
 func getEpochHighestCount(epochNum uint16) (uint16, error) {
 	props, err := ReadProposals(epochNum, 1)
 	if err != nil {
