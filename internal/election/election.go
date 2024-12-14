@@ -156,6 +156,7 @@ func HandleDiscoveryMessage(ring_structure []string, message MessageWrapper) {
 }
 func InitiateElectionDiscovery() {
 	nodeIP := configReader.GetName()
+	Addresses = configReader.GetConfig().Servers
 	initRing := ReorderRing(Addresses, nodeIP)
 	logger.Info(fmt.Sprintf("Node %s initiated election discovery\n", nodeIP))
 	initialContent := []string{}
