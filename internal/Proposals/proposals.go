@@ -52,7 +52,9 @@ func Init(check checkFunction) (committed chan Request, denied chan Request, cou
 	requestChecker = check
 	denied = failedRequestChan
 	zxidCounter = ZXIDCounter{}
-	counter = &zxidCounter
+	epoch, count := RestoreZXIDFromDisk()
+	zxidCounter.setVals(epoch, count)
+	counter = &zxidCounter // for external packages to access this variable
 	return
 }
 
