@@ -123,7 +123,7 @@ func ClientMain() {
 						"message":    "PUBLISH",
 						"session_id": sessionID,
 						"topic":      topic,
-						"data": 	  data,
+						"data":       data,
 					}
 					SendJSONMessage(msg, connectedServer)
 					fmt.Println("Sent " + data + " to " + topic)
@@ -229,7 +229,7 @@ func ClientMain() {
 				logger.Error("There is no session")
 				continue
 			}
-			if len(parts) != 2 {
+			if len(parts) != 3 {
 				logger.Error("Missing path or watch flag for 'exists' command")
 				continue
 			}
@@ -247,7 +247,7 @@ func ClientMain() {
 				logger.Error("There is no session")
 				continue
 			}
-			if len(parts) != 2 {
+			if len(parts) != 3 {
 				logger.Error("Missing path or watch flag for 'getdata' command")
 				continue
 			}
@@ -262,7 +262,7 @@ func ClientMain() {
 
 		default:
 			fmt.Printf("Unknown command: %s\n", command)
-			fmt.Println("Available commands: startsession, endsession, publish, subscribe")
+			fmt.Println("Available commands: startsession, endsession, publish, subscribe, spam, sync, create, delete, setdata, getchildren, exists, getdata")
 		}
 	}
 }
