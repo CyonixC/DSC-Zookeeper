@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var connectedServer string
@@ -94,6 +95,41 @@ func ClientMain() {
 				"topic":      topic,
 			}
 			SendJSONMessage(msg, connectedServer)
+
+		//For load testing: spam messages to a topic
+		case "spam":
+			if connectedServer == "" {
+				fmt.Println("Error: Session has not started")
+				continue
+			}
+			if len(parts) != 3 {
+				fmt.Println("Usage: spam <topic> <msgs per second>")
+				continue
+			}
+
+			topic := strings.TrimSpace(parts[1])
+			mps, err := strconv.Atoi(strings.TrimSpace(parts[2]))
+			if err != nil {
+				fmt.Println("Usage: spam <topic> <msgs per second>")
+				continue
+			}
+
+			go func() {
+				x := 0
+				for {
+					data := "message " + strconv.Itoa(x)
+					time.Sleep(time.Second / time.Duration(mps))
+					msg := map[string]interface{}{
+						"message":    "PUBLISH",
+						"session_id": sessionID,
+						"topic":      topic,
+						"data": 	  data,
+					}
+					SendJSONMessage(msg, connectedServer)
+					fmt.Println("Sent " + data + " to " + topic)
+					x++
+				}
+			}()
 
 		/// EXTRA COMMANDS: for testing & demonstration of zookeeper
 		case "sync":
