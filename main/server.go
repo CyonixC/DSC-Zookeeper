@@ -531,6 +531,11 @@ func committedListener(committed_channel chan proposals.Request) {
 			}
 
 			SendJSONMessageToClient(reply_msg, original_message.Remote)
+
+			if configReader.GetConfig().TestMode == "case1" && configReader.GetName() == "server1" {
+				logger.Fatal("Mode1: Server1 panics just after admitting a client's startsession request")
+				panic("Mode1")
+			}
 		}
 
 		delete(request_id_to_pending_request, request.ReqNumber)
@@ -588,19 +593,23 @@ func deniedListener(denied_channel chan proposals.Request) {
 			}
 		}
 		// TODO: Else case. What happens if non-client proposals are denied? (Can it even happen?)
-		// Eg: proposal do delete ephemeral nodes
+		// Eg: proposal to delete ephemeral nodes
 
 	}
 }
 
 func syncListener() {
 	for range proposals.SyncFinish {
+		logger.Info("Sync finish detected.")
+
 		if election.Coordinator.GetCoordinator() == configReader.GetName() {
+			logger.Info("Coordinator re-initializing session id map")
 			initializeSessionIdMap()
 		}
 
 		// Resend all pending write requests
 		reqid_to_pendreq_mu.Lock()
+		logger.Info("Resending all pending requests")
 		for request_id, pending_request := range request_id_to_pending_request {
 			proposals.SendWriteRequest(pending_request.request, request_id)
 		}
