@@ -660,7 +660,6 @@ func monitorConnectionToClient(failedSends chan string) {
 // If connection to another server fails, trigger an election
 func monitorConnectionToServer(failedSends chan string) {
 	for failedNode := range failedSends {
-		logger.Info(fmt.Sprint("Failed node ", failedNode, "Coordinator ", election.Coordinator.GetCoordinator()))
 		if election.Coordinator.GetCoordinator() == failedNode {
 			election.InitiateElectionDiscovery()
 		} else {
@@ -699,7 +698,8 @@ func sendSessionInfo() {
 	logger.Debug(fmt.Sprint("Sending list of connection session_ids", session_ids))
 	err = connectionManager.SendMessage(network_msg)
 	if err != nil {
-		logger.Error(fmt.Sprint("Failed to send message", err))
+		logger.Error(fmt.Sprint("Failed to send heartbeat: ", err))
+		election.InitiateElectionDiscovery()
 	}
 }
 
