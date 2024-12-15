@@ -47,6 +47,7 @@ func ServerMain() {
 
 	recv, failedSends := connectionManager.Init()
 	go monitorConnectionToClient(failedSends)
+	go monitorConnectionToServer(failedSends)
 	committed, denied, counter := proposals.Init(znode.Check)
 
 	//Start election
@@ -659,23 +660,18 @@ func monitorConnectionToClient(failedSends chan string) {
 // If connection to another server fails, trigger an election
 func monitorConnectionToServer(failedSends chan string) {
 	for failedNode := range failedSends {
-		if failedNode == connectedServer {
-			logger.Error(fmt.Sprint("TCP connection to connected server failed: ", failedNode))
-			connectedServer = ""
-			logger.Info("Attempting to reconnect to a new server")
-			findLiveServer()
-			if election.Coordinator.GetCoordinator() == failedNode {
-				election.InitiateElectionDiscovery()
-			} else {
-				ring_structure := election.ReorderRing(configReader.GetConfig().Servers, configReader.GetName())
-				messageWrapper := election.MessageWrapper{
-					Message_Type: 2,
-					Source:       configReader.GetName(),
-				}
-				updatedRing := election.HandleNewRingMessage(ring_structure, messageWrapper, configReader.GetName())
-				election.Addresses = updatedRing
-				logger.Info(fmt.Sprint("Updated ring structure for node ", configReader.GetName(), updatedRing))
+		logger.Info(fmt.Sprint("Failed node ", failedNode, "Coordinator ", election.Coordinator.GetCoordinator()))
+		if election.Coordinator.GetCoordinator() == failedNode {
+			election.InitiateElectionDiscovery()
+		} else {
+			ring_structure := election.ReorderRing(configReader.GetConfig().Servers, configReader.GetName())
+			messageWrapper := election.MessageWrapper{
+				Message_Type: 2,
+				Source:       configReader.GetName(),
 			}
+			updatedRing := election.HandleNewRingMessage(ring_structure, messageWrapper, configReader.GetName())
+			election.Addresses = updatedRing
+			logger.Info(fmt.Sprint("Updated ring structure for node ", configReader.GetName(), updatedRing))
 		}
 	}
 }

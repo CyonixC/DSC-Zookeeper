@@ -25,7 +25,7 @@ func ClientMain() {
 	versions = make(map[string]int)
 	topicMsgMap = make(map[string]int)
 
-	go monitorConnectionToServer(failedSends)
+	go monitorClientConnectionToServer(failedSends)
 
 	//Main Listener
 	go listener(recv)
@@ -405,9 +405,9 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 			path := obj["path"].(string)
 			fmt.Println("Watch flag triggered for path: ", path)
 		case "WATCH_FAIL":
-			logger.Error(fmt.Sprint("Watch flag was set but not propogated"))
+			logger.Error("Watch flag was set but not propogated")
 		case "REJECT":
-			logger.Error(fmt.Sprint("Some request has been rejected"))
+			logger.Error("Some request has been rejected")
 		}
 	}
 }
@@ -442,4 +442,16 @@ func findLiveServer() bool {
 	}
 	logger.Error("Unable to connect to any server")
 	return false
+}
+
+// If connection to another server fails, trigger an election
+func monitorClientConnectionToServer(failedSends chan string) {
+	for failedNode := range failedSends {
+		if failedNode == connectedServer {
+			logger.Error(fmt.Sprint("TCP connection to connected server failed: ", failedNode))
+			connectedServer = ""
+			logger.Info("Attempting to reconnect to a new server")
+			findLiveServer()
+		}
+	}
 }
