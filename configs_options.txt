@@ -1,5 +1,5 @@
 # Server1 will panic just after admitting a client's startsession request
-"testmode": "case1"
+"testmode": "mode1"
 
 # Default case, with no crashes
 "testmode": "default"

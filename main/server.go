@@ -532,7 +532,7 @@ func committedListener(committed_channel chan proposals.Request) {
 
 			SendJSONMessageToClient(reply_msg, original_message.Remote)
 
-			if configReader.GetConfig().TestMode == "case1" && configReader.GetName() == "server1" {
+			if configReader.GetConfig().TestMode == "mode1" && configReader.GetName() == "server1" {
 				logger.Fatal("Mode1: Server1 panics just after admitting a client's startsession request")
 				panic("Mode1")
 			}
