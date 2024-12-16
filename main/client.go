@@ -396,14 +396,29 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 				SendJSONMessage(msg, connectedServer)
 			}
 		case "GETDATA_OK":
+			// Marshal `znode` for logging
 			jsonData, err := json.MarshalIndent(obj["znode"], "", "  ")
 			if err != nil {
 				fmt.Println("Error marshalling to JSON:", err)
 				return
 			}
 			logger.Info(fmt.Sprint(string(jsonData)))
-			path := obj["path"].(string)
-			fmt.Println("Watch flag triggered for path: ", path)
+
+			// Extract the "Path" from `znode`
+			znode, ok := obj["znode"].(map[string]interface{}) // Ensure znode is a map
+			if !ok {
+				fmt.Println("Error: `znode` is not a valid map structure")
+				return
+			}
+
+			path, ok := znode["Path"].(string) // Extract Path from znode
+			if !ok {
+				fmt.Println("Error: `Path` not found or not a string in `znode`")
+				return
+			}
+
+			fmt.Println("Watch flag triggered for path:", path)
+
 		case "WATCH_FAIL":
 			logger.Error("Watch flag was set but not propogated")
 		case "REJECT":
