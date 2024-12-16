@@ -48,6 +48,7 @@ var zxidCounter ZXIDRef
 func (coordinator *CoordinatorStruct) setCoordinator(electedCoordinator string) {
 	coordinator.Lock()
 	defer coordinator.Unlock()
+	logger.Info("New coordinator. Setting new coordinator as " + electedCoordinator)
 	coordinator.newCoordinator = electedCoordinator
 }
 func (coordinator *CoordinatorStruct) GetCoordinator() string {

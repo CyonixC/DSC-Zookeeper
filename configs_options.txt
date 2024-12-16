@@ -7,8 +7,10 @@
 # Server1 panics during election
 "testmode": "mode2"
 
-# Server2 panics after getting processACK as the new leader
-# A little bit buggy.
+# Server4 panics after getting processACK as the new leader
+# Requires 5 servers. Edit config json and add:
+# "servers": [ "server1", "server2", "server3" , "server4", "server5" ],
+# And edit docker-compose.yaml and enable server4 and server 5
 "testmode": "mode3"
 
 # Server3 panics after receiving a request before responding
