@@ -53,7 +53,7 @@ func ServerMain() {
 	//Start election
 	proposals.Pause()
 	election.ElectionInit(counter)
-	election.InitiateElectionDiscovery()
+	election.InitiateRingEntry()
 
 	//init watch cache
 	znode.Init_watch_cache()
