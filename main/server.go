@@ -17,7 +17,14 @@ import (
 )
 
 // Map request IDs to the original message sent by client
-var pending_requests map[int]connectionManager.NetworkMessage
+var request_id_to_pending_request map[int]PendingRequest
+var reqid_to_pendreq_mu sync.Mutex
+
+type PendingRequest struct {
+	is_from_client      bool                             // Whether the request is associated with a client request. Is true if and only if original_client_msg is not empty.
+	original_client_msg connectionManager.NetworkMessage // Original client's message associated with the request. Might be empty.
+	request             []byte                           // The request itself (the one sent to the proposal)
+}
 
 // Map clients connected to this server to session IDs.
 // Add to this map when receiving a START_SESSION or REESTABLISH_SESSION, remove from this map on END_SESSION or when detect TCP closed.
@@ -35,11 +42,12 @@ const reconnect_timeout time.Duration = 10 * time.Second
 
 // Main entry for server
 func ServerMain() {
-	pending_requests = make((map[int]connectionManager.NetworkMessage))
+	request_id_to_pending_request = make((map[int]PendingRequest))
 	local_sessions = make((map[string]string))
 
 	recv, failedSends := connectionManager.Init()
 	go monitorConnectionToClient(failedSends)
+	go monitorConnectionToServer(failedSends)
 	committed, denied, counter := proposals.Init(znode.Check)
 
 	//Start election
@@ -54,6 +62,7 @@ func ServerMain() {
 	go mainListener(recv)
 	go committedListener(committed)
 	go deniedListener(denied)
+	go syncListener()
 
 	ticker := time.NewTicker(5 * time.Second)
 	go func() {
@@ -119,10 +128,8 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				if election.Coordinator.GetCoordinator() == configReader.GetName() {
 					znode.Init_znode_cache()
 					proposals.Continue()
-					initializeSessionIdMap()
 				}
 			}
-
 			//Handle messages from client
 		} else if network_msg.Type == connectionManager.CLIENTMSG {
 			var message interface{}
@@ -147,7 +154,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				data, _ := znode.Encode_create_session(new_session_id, 2)
 
 				logger.Info(fmt.Sprint("Sending session write request: ", new_session_id, " to leader"))
-				generateAndSendRequest(data, network_msg)
+				generateAndSendRequest(true, data, network_msg)
 
 			case "REESTABLISH_SESSION":
 				// Check if session ID exist, return success if it is, else return failure with new ID.
@@ -165,7 +172,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					}
 					//check if any flags triggered during reconnect
 					if len(request) > 0 {
-						proposals.SendWriteRequest(request, generateUniqueRequestID())
+						generateAndSendRequest(false, request, connectionManager.NetworkMessage{})
 						for _, path := range paths {
 							watch_msg := map[string]interface{}{
 								"message": "WATCH_TRIGGER",
@@ -188,7 +195,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				}
 
 				logger.Info(fmt.Sprint("Sending session end request: ", obj["session_id"].(string), " to leader"))
-				generateAndSendRequest(data, network_msg)
+				generateAndSendRequest(true, data, network_msg)
 
 			case "PUBLISH":
 				//If topic doesn't exist, create it.
@@ -197,11 +204,11 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				exists := znode.Exists(obj["topic"].(string))
 				if !exists { //Create the topic if it doesn't exist
 					data, _ := znode.Encode_create(obj["topic"].(string), []byte{}, false, false, obj["session_id"].(string))
-					generateAndSendRequest(data, network_msg)
+					generateAndSendRequest(true, data, network_msg)
 				} else { //Else, create message with seq flag
 					path := obj["topic"].(string) + "/msg"
 					data, _ := znode.Encode_create(path, []byte(obj["data"].(string)), false, true, obj["session_id"].(string))
-					generateAndSendRequest(data, network_msg)
+					generateAndSendRequest(true, data, network_msg)
 				}
 
 			case "SUBSCRIBE":
@@ -215,7 +222,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					obj["newtopic"] = true //Append a flag to the message so that we know we still need to add the watch flag later
 					modifiedMessage, _ := json.Marshal(obj)
 					network_msg.Message = modifiedMessage
-					generateAndSendRequest(data, network_msg)
+					generateAndSendRequest(true, data, network_msg)
 				} else { //Else, watch the next msg in that topic (highest message number +1, currently nonexistant)
 					children, _ := znode.GetChildren(obj["topic"].(string))
 					nextmsgnum := findMaxMessageNumber(children) + 1
@@ -226,7 +233,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					obj["newtopic"] = false
 					modifiedMessage, _ := json.Marshal(obj)
 					network_msg.Message = modifiedMessage
-					generateAndSendRequest(data, network_msg)
+					generateAndSendRequest(true, data, network_msg)
 				}
 
 			case "GET_SUBSCRIPTION":
@@ -265,7 +272,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
 				logger.Info(fmt.Sprint("Sending sync request", obj["session_id"].(string), "to leader"))
-				generateAndSendRequest(data, network_msg)
+				generateAndSendRequest(true, data, network_msg)
 			case "CREATE":
 				data := []byte(obj["data"].(string))
 				ephemeralStr := obj["ephemeral"].(string)
@@ -276,7 +283,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				if err != nil {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
-				generateAndSendRequest(request, network_msg)
+				generateAndSendRequest(true, request, network_msg)
 			case "DELETE":
 				versionFloat := obj["version"].(float64)
 				version := int(versionFloat)
@@ -285,7 +292,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
 				logger.Info("Sending delete request")
-				generateAndSendRequest(data, network_msg)
+				generateAndSendRequest(true, data, network_msg)
 			case "SETDATA":
 				data := []byte(obj["data"].(string))
 				versionFloat := obj["version"].(float64)
@@ -295,7 +302,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 					SendInfoMessageToClient(err.Error(), this_client)
 				}
 				logger.Info("Setting data")
-				generateAndSendRequest(request, network_msg)
+				generateAndSendRequest(true, request, network_msg)
 			case "GETCHILDREN":
 				children, err := znode.GetChildren(obj["path"].(string))
 				if err != nil {
@@ -313,7 +320,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 						SendInfoMessageToClient(err.Error(), this_client)
 					}
 					logger.Info("Adding watch flag")
-					generateAndSendRequest(request, network_msg)
+					generateAndSendRequest(true, request, network_msg)
 				}
 				reply_msg := map[string]interface{}{
 					"message":  "GETCHILDREN_OK",
@@ -334,7 +341,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 						SendInfoMessageToClient(err.Error(), this_client)
 					}
 					logger.Info("Adding watch flag")
-					generateAndSendRequest(request, network_msg)
+					generateAndSendRequest(true, request, network_msg)
 				}
 				reply_msg := map[string]interface{}{
 					"message": "EXISTS_OK",
@@ -358,7 +365,7 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 						SendInfoMessageToClient(err.Error(), this_client)
 					}
 					logger.Info("Adding watch flag")
-					generateAndSendRequest(request, network_msg)
+					generateAndSendRequest(true, request, network_msg)
 				}
 				reply_msg := map[string]interface{}{
 					"message": "GETDATA_OK",
@@ -411,12 +418,15 @@ func committedListener(committed_channel chan proposals.Request) {
 					}
 				}
 			}
-			proposals.SendWriteRequest(data, generateUniqueRequestID())
+			generateAndSendRequest(false, data, connectionManager.NetworkMessage{})
 		}
 
-		//If it's my client, remove from pending_requests and reply to client
-		original_message, exists := pending_requests[request.ReqNumber]
-		if exists {
+		pending_request, exists := request_id_to_pending_request[request.ReqNumber]
+
+		//If it's my client, remove from pending_request map and reply to client
+		if exists && pending_request.is_from_client {
+			original_message := pending_request.original_client_msg
+
 			var message interface{}
 			json.Unmarshal([]byte(original_message.Message), &message)
 			var reply_msg interface{}
@@ -447,7 +457,7 @@ func committedListener(committed_channel chan proposals.Request) {
 					//Create msg and send a new request
 					path := obj["topic"].(string) + "/msg"
 					data, _ := znode.Encode_create(path, []byte(obj["data"].(string)), false, true, obj["session_id"].(string))
-					generateAndSendRequest(data, original_message)
+					generateAndSendRequest(true, data, original_message)
 					reply_msg = map[string]interface{}{
 						"message": "CREATE_TOPIC_OK",
 					}
@@ -471,7 +481,7 @@ func committedListener(committed_channel chan proposals.Request) {
 					obj["newtopic"] = false
 					modifiedMessage, _ := json.Marshal(obj)
 					original_message.Message = modifiedMessage
-					generateAndSendRequest(data, original_message)
+					generateAndSendRequest(true, data, original_message)
 
 					reply_msg = map[string]interface{}{
 						"message": "CREATE_TOPIC_OK",
@@ -521,8 +531,14 @@ func committedListener(committed_channel chan proposals.Request) {
 			}
 
 			SendJSONMessageToClient(reply_msg, original_message.Remote)
-			delete(pending_requests, request.ReqNumber)
+
+			if configReader.GetConfig().TestMode == "mode1" && configReader.GetName() == "server1" {
+				logger.Fatal("Mode1: Server1 panics just after admitting a client's startsession request")
+				panic("Mode1")
+			}
 		}
+
+		delete(request_id_to_pending_request, request.ReqNumber)
 	}
 }
 
@@ -531,9 +547,16 @@ func deniedListener(denied_channel chan proposals.Request) {
 	for request := range denied_channel {
 		logger.Info(fmt.Sprint("Receive denied ", request.ReqNumber, ": Type ", request.ReqType))
 
-		//If it's my client, remove from pending_requests and reply to client
-		original_message, exists := pending_requests[request.ReqNumber]
-		if exists {
+		pending_request, exists := request_id_to_pending_request[request.ReqNumber]
+
+		if !exists {
+			continue
+		}
+
+		//If it's my client, remove from pending_request map and reply to client
+		if pending_request.is_from_client {
+			original_message := pending_request.original_client_msg
+
 			var message interface{}
 			json.Unmarshal([]byte(original_message.Message), &message)
 			obj := message.(map[string]interface{})
@@ -546,8 +569,8 @@ func deniedListener(denied_channel chan proposals.Request) {
 					"message": "START_SESSION_REJECT",
 				}
 
-				SendJSONMessageToClient(reply_msg, pending_requests[request.ReqNumber].Remote)
-				delete(pending_requests, request.ReqNumber)
+				SendJSONMessageToClient(reply_msg, original_message.Remote)
+				delete(request_id_to_pending_request, request.ReqNumber)
 			//read ops only send a proposal when watch is true, hence if failed, failure to propogate watch flag
 			//BUT will successfully add to local watch cache
 			//Instead of replying to client, retry propogaing watch flag
@@ -560,23 +583,49 @@ func deniedListener(denied_channel chan proposals.Request) {
 				for _, sessionid := range sessionids {
 					if sessionid == local_sessions[original_message.Remote] {
 						data, _ := znode.Encode_watch(local_sessions[original_message.Remote], obj["path"].(string), false)
-						generateAndSendRequest(data, original_message)
+						generateAndSendRequest(true, data, original_message)
 						break
 					}
 				}
 			default:
-				SendJSONMessageToClient(reply_msg, pending_requests[request.ReqNumber].Remote)
-				delete(pending_requests, request.ReqNumber)
+				SendJSONMessageToClient(reply_msg, original_message.Remote)
+				delete(request_id_to_pending_request, request.ReqNumber)
 			}
 		}
+		// TODO: Else case. What happens if non-client proposals are denied? (Can it even happen?)
+		// Eg: proposal to delete ephemeral nodes
+
 	}
 }
 
-// Helper function to generate unique request ID, send request, and append the new request to pending_requests
-func generateAndSendRequest(data []byte, original_message connectionManager.NetworkMessage) {
+func syncListener() {
+	for range proposals.SyncFinish {
+		logger.Info("Sync finish detected.")
+
+		if election.Coordinator.GetCoordinator() == configReader.GetName() {
+			logger.Info("Coordinator re-initializing session id map")
+			initializeSessionIdMap()
+		}
+
+		// Resend all pending write requests
+		reqid_to_pendreq_mu.Lock()
+		logger.Info("Resending all pending requests")
+		for request_id, pending_request := range request_id_to_pending_request {
+			proposals.SendWriteRequest(pending_request.request, request_id)
+		}
+		reqid_to_pendreq_mu.Unlock()
+	}
+
+}
+
+// Helper function to generate unique request ID, send request, and append the new request to pending_request map
+func generateAndSendRequest(is_from_client bool, data []byte, original_message connectionManager.NetworkMessage) {
 	new_req_id := generateUniqueRequestID()
 	proposals.SendWriteRequest(data, new_req_id)
-	pending_requests[new_req_id] = original_message
+
+	reqid_to_pendreq_mu.Lock()
+	request_id_to_pending_request[new_req_id] = PendingRequest{is_from_client: is_from_client, original_client_msg: original_message, request: data}
+	reqid_to_pendreq_mu.Unlock()
 }
 
 // Generate a random unique request ID
@@ -589,7 +638,9 @@ func generateUniqueRequestID() int {
 	var new_req_id int
 	for {
 		new_req_id = server_number*1000000000 + rand.Intn(10000000)
-		_, exists := pending_requests[new_req_id]
+
+		_, exists := request_id_to_pending_request[new_req_id]
+
 		if !exists {
 			return new_req_id
 		}
@@ -607,7 +658,7 @@ func monitorConnectionToClient(failedSends chan string) {
 				logger.Error(fmt.Sprint("Error in deleting session:", err))
 			}
 
-			proposals.SendWriteRequest(request, generateUniqueRequestID())
+			generateAndSendRequest(false, request, connectionManager.NetworkMessage{})
 			logger.Info(fmt.Sprint("Session deleting a timed-out session_id", session_id))
 
 			delete(local_sessions, failedNode)
@@ -618,23 +669,17 @@ func monitorConnectionToClient(failedSends chan string) {
 // If connection to another server fails, trigger an election
 func monitorConnectionToServer(failedSends chan string) {
 	for failedNode := range failedSends {
-		if failedNode == connectedServer {
-			logger.Error(fmt.Sprint("TCP connection to connected server failed: ", failedNode))
-			connectedServer = ""
-			logger.Info("Attempting to reconnect to a new server")
-			findLiveServer()
-			if election.Coordinator.GetCoordinator() == failedNode {
-				election.InitiateElectionDiscovery()
-			} else {
-				ring_structure := election.ReorderRing(configReader.GetConfig().Servers, configReader.GetName())
-				messageWrapper := election.MessageWrapper{
-					Message_Type: 2,
-					Source:       configReader.GetName(),
-				}
-				updatedRing := election.HandleNewRingMessage(ring_structure, messageWrapper, configReader.GetName())
-				election.Addresses = updatedRing
-				logger.Info(fmt.Sprint("Updated ring structure for node ", configReader.GetName(), updatedRing))
+		if election.Coordinator.GetCoordinator() == failedNode {
+			election.InitiateElectionDiscovery()
+		} else {
+			ring_structure := election.ReorderRing(configReader.GetConfig().Servers, configReader.GetName())
+			messageWrapper := election.MessageWrapper{
+				Message_Type: 2,
+				Source:       configReader.GetName(),
 			}
+			updatedRing := election.HandleNewRingMessage(ring_structure, messageWrapper, configReader.GetName())
+			election.Addresses = updatedRing
+			logger.Info(fmt.Sprint("Updated ring structure for node ", configReader.GetName(), updatedRing))
 		}
 	}
 }
@@ -662,7 +707,8 @@ func sendSessionInfo() {
 	logger.Debug(fmt.Sprint("Sending list of connection session_ids", session_ids))
 	err = connectionManager.SendMessage(network_msg)
 	if err != nil {
-		logger.Error(fmt.Sprint("Failed to send message", err))
+		logger.Error(fmt.Sprint("Failed to send heartbeat: ", err))
+		election.InitiateElectionDiscovery()
 	}
 }
 
@@ -688,6 +734,11 @@ func recvSessionInfo(session_info_json []byte) {
 
 	if err != nil {
 		logger.Error(fmt.Sprint("Failed to decode json session info", err))
+	}
+
+	// If we received session info before sync finished, ignore it.
+	if session_id_to_timestamp == nil {
+		return
 	}
 
 	sessid_to_ts_mu.Lock()
@@ -717,7 +768,7 @@ func removeExpiredSessions() {
 			logger.Error(fmt.Sprint("Error in deleting session:", err))
 		}
 
-		proposals.SendWriteRequest(request, generateUniqueRequestID())
+		generateAndSendRequest(false, request, connectionManager.NetworkMessage{})
 
 		logger.Info(fmt.Sprint("Coordinator deleting a timed-out session_id", session_id))
 		delete(session_id_to_timestamp, session_id)

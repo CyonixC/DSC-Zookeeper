@@ -9,8 +9,9 @@ import (
 )
 
 type Config struct {
-	Servers []string `json:"servers"`
-	Clients []string `json:"clients"`
+	Servers  []string `json:"servers"`
+	Clients  []string `json:"clients"`
+	TestMode string   `json:"testmode"`
 }
 
 type Mode int

@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var connectedServer string
@@ -24,7 +25,7 @@ func ClientMain() {
 	versions = make(map[string]int)
 	topicMsgMap = make(map[string]int)
 
-	go monitorConnectionToServer(failedSends)
+	go monitorClientConnectionToServer(failedSends)
 
 	//Main Listener
 	go listener(recv)
@@ -94,6 +95,41 @@ func ClientMain() {
 				"topic":      topic,
 			}
 			SendJSONMessage(msg, connectedServer)
+
+		//For load testing: spam messages to a topic
+		case "spam":
+			if connectedServer == "" {
+				fmt.Println("Error: Session has not started")
+				continue
+			}
+			if len(parts) != 3 {
+				fmt.Println("Usage: spam <topic> <msgs per second>")
+				continue
+			}
+
+			topic := strings.TrimSpace(parts[1])
+			mps, err := strconv.Atoi(strings.TrimSpace(parts[2]))
+			if err != nil {
+				fmt.Println("Usage: spam <topic> <msgs per second>")
+				continue
+			}
+
+			go func() {
+				x := 0
+				for {
+					data := "message " + strconv.Itoa(x)
+					time.Sleep(time.Second / time.Duration(mps))
+					msg := map[string]interface{}{
+						"message":    "PUBLISH",
+						"session_id": sessionID,
+						"topic":      topic,
+						"data":       data,
+					}
+					SendJSONMessage(msg, connectedServer)
+					fmt.Println("Sent " + data + " to " + topic)
+					x++
+				}
+			}()
 
 		/// EXTRA COMMANDS: for testing & demonstration of zookeeper
 		case "sync":
@@ -193,7 +229,7 @@ func ClientMain() {
 				logger.Error("There is no session")
 				continue
 			}
-			if len(parts) != 2 {
+			if len(parts) != 3 {
 				logger.Error("Missing path or watch flag for 'exists' command")
 				continue
 			}
@@ -211,7 +247,7 @@ func ClientMain() {
 				logger.Error("There is no session")
 				continue
 			}
-			if len(parts) != 2 {
+			if len(parts) != 3 {
 				logger.Error("Missing path or watch flag for 'getdata' command")
 				continue
 			}
@@ -226,7 +262,7 @@ func ClientMain() {
 
 		default:
 			fmt.Printf("Unknown command: %s\n", command)
-			fmt.Println("Available commands: startsession, endsession, publish, subscribe")
+			fmt.Println("Available commands: startsession, endsession, publish, subscribe, spam, sync, create, delete, setdata, getchildren, exists, getdata")
 		}
 	}
 }
@@ -369,9 +405,9 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 			path := obj["path"].(string)
 			fmt.Println("Watch flag triggered for path: ", path)
 		case "WATCH_FAIL":
-			logger.Error(fmt.Sprint("Watch flag was set but not propogated"))
+			logger.Error("Watch flag was set but not propogated")
 		case "REJECT":
-			logger.Error(fmt.Sprint("Some request has been rejected"))
+			logger.Error("Some request has been rejected")
 		}
 	}
 }
@@ -406,4 +442,16 @@ func findLiveServer() bool {
 	}
 	logger.Error("Unable to connect to any server")
 	return false
+}
+
+// If connection to another server fails, trigger an election
+func monitorClientConnectionToServer(failedSends chan string) {
+	for failedNode := range failedSends {
+		if failedNode == connectedServer {
+			logger.Error(fmt.Sprint("TCP connection to connected server failed: ", failedNode))
+			connectedServer = ""
+			logger.Info("Attempting to reconnect to a new server")
+			findLiveServer()
+		}
+	}
 }
