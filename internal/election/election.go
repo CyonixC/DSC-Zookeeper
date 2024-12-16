@@ -12,6 +12,7 @@ import (
 
 type MessageType int
 
+var ringDiscoverInitiator bool = false
 var Addresses []string = configReader.GetConfig().Servers
 var mu sync.Mutex
 
@@ -20,6 +21,7 @@ const (
 	MessageTypeAnnouncement
 	MessageTypeNewRing
 	MessageTypeHeartbeat
+	MessageTypeRingDiscover
 )
 
 type CoordinatorStruct struct {
@@ -98,7 +100,7 @@ func Pass_message_down_ring(ring_structure []string, message MessageWrapper) boo
 		logger.Info(fmt.Sprintf("Updated Zxid: [%d], thread id: %s\n", message.ZxId_List, id))
 
 		message.Source = id
-		go DispatchMessage(ring_structure, message)
+		DispatchMessage(ring_structure, message)
 		return false
 	}
 }
@@ -147,7 +149,7 @@ func HandleDiscoveryMessage(ring_structure []string, message MessageWrapper) {
 			logger.Info(fmt.Sprintf("New Coordinator: %v", electedCoordinator))
 			Addresses = message.Visited_Nodes
 			ring_struct := ReorderRing(message.Visited_Nodes, nodeIP)
-			go SendRingAnnouncement(ring_struct, []string{electedCoordinator}, MessageTypeAnnouncement)
+			SendRingAnnouncement(ring_struct, []string{electedCoordinator}, MessageTypeAnnouncement)
 		} else {
 			logger.Error(fmt.Sprint("No enough majority votes dk why teehee"))
 		}
@@ -163,12 +165,30 @@ func InitiateElectionDiscovery() {
 	StartRingMessage(initRing, initialContent, MessageTypeDiscovery)
 }
 
+func InitiateRingEntry() {
+	ringDiscoverInitiator = true
+	nodeIP := configReader.GetName()
+	Addresses = configReader.GetConfig().Servers
+	initRing := ReorderRing(Addresses, nodeIP)
+	logger.Info(fmt.Sprintf("Node %s initiated ring discovery\n", nodeIP))
+	initialContent := []string{}
+	StartRingMessage(initRing, initialContent, MessageTypeRingDiscover)
+}
+
+func HandleRingDiscover(ring []string, message MessageWrapper) {
+	if Pass_message_down_ring(ring, message) {
+		newStructure := message.Visited_Nodes
+		ringStructure := ReorderRing(newStructure, configReader.GetName())
+		StartRingMessage(ringStructure, newStructure, MessageTypeNewRing)
+	}
+}
+
 // Processes an announcement message and initiates a new ring announcement if the election finishes.
 func HandleAnnouncementMessage(ring []string, message MessageWrapper) string {
 	isComplete := Pass_message_down_ring(ring, message)
 	if isComplete {
 		logger.Info(fmt.Sprintf("Finish Election"))
-		go SendRingAnnouncement(ring, message.Visited_Nodes, MessageTypeNewRing)
+		SendRingAnnouncement(ring, message.Visited_Nodes, MessageTypeNewRing)
 	}
 	return slices.Max(message.Payload)
 }
@@ -191,10 +211,20 @@ func HandleMessage(messageWrapper MessageWrapper) bool {
 		logger.Info(fmt.Sprint(nodeIP, " acknowledges new coordinator ", newcoords))
 		return true
 	case MessageTypeNewRing:
+		Addresses = messageWrapper.Payload
 		ring_structure := ReorderRing(Addresses, nodeIP)
-		updatedRing := HandleNewRingMessage(ring_structure, messageWrapper, nodeIP)
-		Addresses = updatedRing
-		logger.Info(fmt.Sprint("Updated ring structure for node ", nodeIP, updatedRing))
+		HandleNewRingMessage(ring_structure, messageWrapper, nodeIP)
+		logger.Info(fmt.Sprint("Updated ring structure for node ", nodeIP, Addresses))
+		if ringDiscoverInitiator {
+			logger.Info(fmt.Sprint(nodeIP, " started a new election discovery"))
+			ringDiscoverInitiator = false
+			InitiateElectionDiscovery()
+			return true
+		}
+		return false
+	case MessageTypeRingDiscover:
+		ring_structure := ReorderRing(Addresses, nodeIP)
+		HandleRingDiscover(ring_structure, messageWrapper)
 		return false
 	default:
 		return false
