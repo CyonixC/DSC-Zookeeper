@@ -145,7 +145,6 @@ func HandleDiscoveryMessage(ring_structure []string, message MessageWrapper) {
 		if len(message.Visited_Nodes) >= (len(Addresses)/2)+1 {
 			electedCoordinator := getCorrespondingValue(message.ZxId_List, message.Visited_Nodes)
 			logger.Info(fmt.Sprintf("New Coordinator: %v", electedCoordinator))
-			Addresses = message.Visited_Nodes
 			ring_struct := ReorderRing(message.Visited_Nodes, nodeIP)
 			go SendRingAnnouncement(ring_struct, []string{electedCoordinator}, MessageTypeAnnouncement)
 		} else {
@@ -156,7 +155,6 @@ func HandleDiscoveryMessage(ring_structure []string, message MessageWrapper) {
 }
 func InitiateElectionDiscovery() {
 	nodeIP := configReader.GetName()
-	Addresses = configReader.GetConfig().Servers
 	initRing := ReorderRing(Addresses, nodeIP)
 	logger.Info(fmt.Sprintf("Node %s initiated election discovery\n", nodeIP))
 	initialContent := []string{}
