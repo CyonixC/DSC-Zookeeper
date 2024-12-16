@@ -1,5 +1,18 @@
-# Server1 will panic just after admitting a client's startsession request
-"testmode": "mode1"
-
 # Default case, with no crashes
 "testmode": "default"
+
+# Server1 panics just after admitting a client's startsession request
+"testmode": "mode1"
+
+# Server1 panics during election
+"testmode": "mode2"
+
+# Server2 panics after getting processACK as the new leader
+# A little bit buggy.
+"testmode": "mode3"
+
+# Server3 panics after receiving a request before responding
+"testmode": "mode4"
+
+# Server1 panics after receiving commit, but before responding to client (create request)
+"testmode": "mode5"

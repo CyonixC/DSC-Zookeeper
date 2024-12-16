@@ -9,6 +9,7 @@ services:
       - "8081:8080"
     networks:
       - app-network
+    # restart: always
     container_name: server1
 
   server2:

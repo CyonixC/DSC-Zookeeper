@@ -165,6 +165,10 @@ func ProcessZabMessage(netMsg cxn.NetworkMessage) {
 
 	switch msg.ZabType {
 	case Req:
+		if configReader.GetConfig().TestMode == "mode4" && configReader.GetName() == "server3" {
+			logger.Fatal("Mode4: Server3 panics after receiving a request before responding")
+			panic("Mode4")
+		}
 		var req Request
 		deserialise(msg.Content, &req)
 		if requestsProcessingEnabled || req.ReqType == Sync {
@@ -310,6 +314,10 @@ func processNewLeaderProposal(prop Proposal, source string, originalMsg ZabMessa
 func processACK(prop Proposal) {
 	zxid := getZXIDAsInt(prop.EpochNum, prop.CountNum)
 	if prop.PropType == NewLeader {
+		if configReader.GetConfig().TestMode == "mode3" && configReader.GetName() == "server2" {
+			logger.Fatal("Mode3: Server2 panics after getting processACK as the new leader")
+			panic("Mode3")
+		}
 		// ACKing the NewLeader proposal
 		if !requestsProcessingEnabled && prop.CountNum == currentSync.CountNum && prop.EpochNum == currentSync.EpochNum {
 			// Sync currently active

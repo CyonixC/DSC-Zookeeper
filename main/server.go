@@ -350,6 +350,10 @@ func mainListener(recv_channel chan connectionManager.NetworkMessage) {
 				}
 				SendJSONMessageToClient(reply_msg, this_client)
 			case "GETDATA":
+				if configReader.GetConfig().TestMode == "mode2" && configReader.GetName() == "server1" {
+					logger.Fatal("Mode2: Server1 panics just after receiving a SET_DATA request (before it sends any proposals)")
+					panic("Mode2")
+				}
 				znode_data, err := znode.GetData(obj["path"].(string))
 				if err != nil {
 					logger.Error("There is error in getdata")
@@ -507,6 +511,10 @@ func committedListener(committed_channel chan proposals.Request) {
 
 			/// EXTRA COMMANDS: for testing & demonstration of zookeeper
 			case "CREATE":
+				if configReader.GetConfig().TestMode == "mode5" && configReader.GetName() == "server1" {
+					logger.Fatal("Mode5 Server1 panics after receiving commit, but before responding to client (create request)")
+					panic("Mode5")
+				}
 				reply_msg = map[string]interface{}{
 					"message": "CREATE_OK",
 					"path":    obj["path"],

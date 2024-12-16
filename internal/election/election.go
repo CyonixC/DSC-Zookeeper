@@ -201,6 +201,10 @@ func HandleMessage(messageWrapper MessageWrapper) bool {
 	case MessageTypeDiscovery:
 		ring_structure := ReorderRing(Addresses, nodeIP)
 		HandleDiscoveryMessage(ring_structure, messageWrapper)
+		if configReader.GetConfig().TestMode == "mode2" && configReader.GetName() == "server1" {
+			logger.Fatal("Mode2: Server1 panics during election")
+			panic("Mode2")
+		}
 		return true
 	case MessageTypeAnnouncement:
 		ring_structure := ReorderRing(Addresses, nodeIP)
