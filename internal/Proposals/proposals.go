@@ -242,7 +242,10 @@ func processStateChangeProposal(prop Proposal, source string, originalMsg ZabMes
 			syncTrack.deactivate()
 			ack := makeACK(syncMsg)
 			queueSend(ack, false, source)
-			SyncFinish <- true
+			select {
+			case SyncFinish <- true:
+			default:
+			}
 		}
 	} else {
 		// Otherwise, normal operation
@@ -282,7 +285,10 @@ func processNewLeaderProposal(prop Proposal, source string, originalMsg ZabMessa
 		logger.Debug("Received NewLeader but already up to date, ACKing the NewLeader")
 		ack := makeACK(originalMsg)
 		queueSend(ack, false, source)
-		SyncFinish <- true
+		select {
+		case SyncFinish <- true:
+		default:
+		}
 		return
 	}
 
@@ -400,6 +406,7 @@ func processRequest(req Request, remoteID string) error {
 		}
 		proposalsQueue.enqueue(prop)
 		logger.Info(fmt.Sprint("Request processed successfully, broadcasting as Proposal #", zxid))
+		queueWriteProposal(prop)
 		broadcastProposal(prop)
 	case Sync:
 		// New sync server

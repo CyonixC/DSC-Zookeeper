@@ -62,7 +62,7 @@ func main() {
 	// Initialise with the random check function
 	success, rejected, counter := proposals.Init(randomPassFail)
 	election.ElectionInit(counter)
-	election.InitiateElectionDiscovery()
+	election.InitiateRingEntry()
 
 	// Failed node processing loop
 	go func() {
