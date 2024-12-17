@@ -17,12 +17,10 @@ var sessionID string
 var topicMsgMap map[string]int //Map of subscribed topic: next message ID to be read
 
 var exist bool
-var versions map[string]int
 
 // Main entry for client
 func ClientMain() {
 	recv, failedSends := connectionManager.Init()
-	versions = make(map[string]int)
 	topicMsgMap = make(map[string]int)
 
 	go monitorClientConnectionToServer(failedSends)
@@ -174,16 +172,17 @@ func ClientMain() {
 				continue
 			}
 
-			if len(parts) != 2 {
-				logger.Error("Missing path for 'delete' command")
+			if len(parts) != 3 {
+				logger.Error("Missing path and versionsfor 'delete' command")
 				continue
 			}
 			path := strings.TrimSpace(parts[1])
+			versions := strings.TrimSpace(parts[2])
 			msg := map[string]interface{}{
 				"message":    "DELETE",
 				"session_id": sessionID,
 				"path":       path,
-				"version":    versions[path],
+				"version":    versions,
 			}
 			SendJSONMessage(msg, connectedServer)
 
@@ -192,17 +191,18 @@ func ClientMain() {
 				fmt.Println("Error: Session has not started")
 				continue
 			}
-			if len(parts) != 3 {
-				logger.Error("Missing path and data for 'setdata' command")
+			if len(parts) != 4 {
+				logger.Error("Missing path, version and data for 'setdata' command")
 				continue
 			}
 			path := strings.TrimSpace(parts[1])
 			data := strings.TrimSpace(parts[2])
+			version := strings.TrimSpace(parts[3])
 			msg := map[string]interface{}{
 				"message": "SETDATA",
 				"path":    path,
 				"data":    data,
-				"version": versions[path],
+				"version": version,
 			}
 			SendJSONMessage(msg, connectedServer)
 
@@ -354,23 +354,15 @@ func listener(recv_channel chan connectionManager.NetworkMessage) {
 
 		/// EXTRA COMMANDS: for testing & demonstration of zookeeper
 		case "SYNC_OK":
-			path := obj["path"].(string)
-			versions[path]++
 			fmt.Println("Sync Ok")
 		case "CREATE_OK":
-			path := obj["path"].(string)
-			if _, exists := versions[path]; !exists {
-				versions[path] = 1
-			}
+
 			fmt.Println("Create Ok")
 		case "DELETE_OK":
-			path := obj["path"].(string)
-			delete(versions, path)
 			fmt.Println("Delete Ok")
 		case "SETDATA_OK":
-			path := obj["path"].(string)
-			versions[path]++
-			fmt.Println("SetData Ok ", versions[path])
+			version := obj["versions"].(string)
+			fmt.Println("SetData Ok ", version)
 		case "GETCHILDREN_OK":
 			children, err := obj["children"].([]string)
 			if err {
