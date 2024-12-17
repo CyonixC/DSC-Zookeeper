@@ -1,5 +1,5 @@
 {
     "servers": [ "server1", "server2", "server3" ],
     "clients": [ "client1", "client2" ],
-    "testmode": "mode3"
+    "testmode": "default"
 }

@@ -22,9 +22,9 @@ COPY --exclude=go.mod --exclude=config.json . ./
 # https://docs.docker.com/engine/reference/builder/#expose
 EXPOSE 8080
 
-COPY config.json ./
-
 FROM build-stage AS compile-stage
 RUN CGO_ENABLED=0 GOOS=linux go build -o ./go-main ./main/
+
+COPY config.json ./
 # Run
 CMD ["./go-main"]

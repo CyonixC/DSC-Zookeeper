@@ -149,6 +149,8 @@ func SendNewLeader() {
 	broadcastProposal(prop)
 }
 
+var mode4_msgCount int = 0
+
 // Process a Zab message received from the network.
 func ProcessZabMessage(netMsg cxn.NetworkMessage) {
 	src := netMsg.Remote
@@ -165,7 +167,8 @@ func ProcessZabMessage(netMsg cxn.NetworkMessage) {
 
 	switch msg.ZabType {
 	case Req:
-		if configReader.GetConfig().TestMode == "mode4" && configReader.GetName() == "server3" {
+		mode4_msgCount++
+		if configReader.GetConfig().TestMode == "mode4" && configReader.GetName() == "server3" && mode4_msgCount == 5 {
 			logger.Fatal("Mode4: Server3 panics after receiving a request before responding")
 			panic("Mode4")
 		}
